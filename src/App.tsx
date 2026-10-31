@@ -1,90 +1,76 @@
-import { useState, useEffect } from "react"
-import { getCurrentWindow } from "@tauri-apps/api/window"
-import "./App.css"
+import { useCallback, useState } from "react"
+import { TopBar } from "./components/TopBar"
+import { MediaBin } from "./components/MediaBin"
+import { Viewer } from "./components/Viewer"
+import { Inspector } from "./components/Inspector"
+import { Timeline } from "./components/Timeline"
+import { ExportDialog } from "./components/ExportDialog"
+import { Overlays } from "./components/overlays"
+import { useEditor, useMediaDrag } from "./store/editor"
+import { useFileDrop, usePlaybackClock, useShortcuts } from "./hooks"
 
-const appWindow = getCurrentWindow()
+const TOP_BAR = 48
+const MIN_TIMELINE = 200
+const MIN_UPPER = 300
 
-function App() {
-  const [isMaximized, setIsMaximized] = useState(false)
+export default function App() {
 
-  useEffect(() => {
-    const checkMaximized = async () => {
-      setIsMaximized(await appWindow.isMaximized())
+  const [exportOpen, setExportOpen] = useState(false)
+  const [timelineH, setTimelineH] = useState(() => Math.round((window.innerHeight - TOP_BAR) * 0.42))
+  const fileOver = useFileDrop()
+
+  usePlaybackClock()
+  useShortcuts()
+
+  const startResize = useCallback((e: React.PointerEvent) => {
+
+    const el = e.currentTarget as HTMLElement
+
+    el.setPointerCapture(e.pointerId)
+
+    const startY = e.clientY
+    const startH = timelineH
+    const move = (ev: PointerEvent) => {
+      const max = window.innerHeight - TOP_BAR - MIN_UPPER
+      setTimelineH(Math.min(max, Math.max(MIN_TIMELINE, startH - (ev.clientY - startY))))
     }
-    checkMaximized()
-
-    const unlisten = appWindow.onResized(async () => {
-      setIsMaximized(await appWindow.isMaximized())
-    })
-
-    return () => {
-      unlisten.then((fn) => fn())
+    const up = () => {
+      el.removeEventListener("pointermove", move)
+      el.removeEventListener("pointerup", up)
     }
-  }, [])
+    el.addEventListener("pointermove", move)
+    el.addEventListener("pointerup", up)
+  }, [timelineH])
 
   return (
-    <div className="app-wrapper">
-      {/* Custom Titlebar */}
-      <div className="titlebar" data-tauri-drag-region>
-        <div className="titlebar-title" data-tauri-drag-region>
-          Slate
+    <div className="flex h-screen flex-col bg-app">
+      <TopBar onExport={() => setExportOpen(true)} />
+      <main className="flex min-h-0 flex-1 flex-col px-2 pb-2">
+        <div className="flex min-h-0 flex-1 gap-2">
+          <MediaBin dropActive={fileOver} />
+          <Viewer />
+          <Inspector />
         </div>
-        <div className="titlebar-controls">
-          <button
-            className="titlebar-btn"
-            id="titlebar-minimize"
-            onClick={() => appWindow.minimize()}
-          >
-            <svg width="10" height="1" viewBox="0 0 10 1">
-              <rect width="10" height="1" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            className="titlebar-btn"
-            id="titlebar-maximize"
-            onClick={() => appWindow.toggleMaximize()}
-          >
-            {isMaximized ? (
-              <svg width="10" height="10" viewBox="0 0 10 10">
-                <path
-                  d="M2 0h6v2h2v6H8v2H0V4h2V0zm1 1v2h5v5h1V2H3zm-2 3v5h6V4H1z"
-                  fill="currentColor"
-                />
-              </svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 10 10">
-                <rect
-                  x="0.5"
-                  y="0.5"
-                  width="9"
-                  height="9"
-                  stroke="currentColor"
-                  fill="none"
-                  strokeWidth="1"
-                />
-              </svg>
-            )}
-          </button>
-          <button
-            className="titlebar-btn titlebar-btn-close"
-            id="titlebar-close"
-            onClick={() => appWindow.close()}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10">
-              <path
-                d="M1 0L5 4L9 0L10 1L6 5L10 9L9 10L5 6L1 10L0 9L4 5L0 1Z"
-                fill="currentColor"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <main className="container">
+        <div className="h-2 shrink-0 cursor-row-resize" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label="Resize timeline" />
+        <Timeline height={timelineH} />
       </main>
+      <DragGhost />
+      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
+      <Overlays />
     </div>
   )
 }
 
-export default App
+function DragGhost() {
+
+  const drag = useMediaDrag((s) => s.drag)
+  const name = useEditor((s) => (drag ? s.media.find((m) => m.id === drag.mediaId)?.name : undefined))
+
+  if (!drag || !name) return null
+
+  return (
+    <div className="pointer-events-none fixed z-50 rounded-md bg-tooltip px-2 py-1.5 text-small text-white shadow-float" style={{ left: drag.x + 12, top: drag.y + 12 }}>
+      {name}
+    </div>
+  )
+}

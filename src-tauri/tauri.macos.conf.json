@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "Slate",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "center": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#161616"
+      }
+    ]
+  }
+}

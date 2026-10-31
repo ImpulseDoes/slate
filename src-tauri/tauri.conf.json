@@ -13,19 +13,33 @@
     "windows": [
       {
         "title": "Slate",
-        "width": 800,
-        "height": 600,
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "center": true,
         "decorations": false,
-        "transparent": false
+        "transparent": false,
+        "backgroundColor": "#161616"
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

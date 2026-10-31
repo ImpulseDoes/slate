@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="228" fill="#1c1c1c"/>
+  <!-- clapper bar -->
+  <g transform="rotate(-10 232 400)">
+    <clipPath id="bar"><rect x="232" y="292" width="560" height="96" rx="28"/></clipPath>
+    <rect x="232" y="292" width="560" height="96" rx="28" fill="#f2f2f2"/>
+    <g clip-path="url(#bar)" fill="#1c1c1c">
+      <polygon points="330,292 400,292 350,388 280,388"/>
+      <polygon points="470,292 540,292 490,388 420,388"/>
+      <polygon points="610,292 680,292 630,388 560,388"/>
+      <polygon points="750,292 820,292 770,388 700,388"/>
+    </g>
+  </g>
+  <!-- board -->
+  <rect x="232" y="432" width="560" height="360" rx="44" fill="#f2f2f2"/>
+  <!-- playhead -->
+  <rect x="498" y="488" width="28" height="248" rx="14" fill="#9333ea"/>
+</svg>
