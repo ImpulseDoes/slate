@@ -18,6 +18,7 @@ import {
   ZoomInIcon,
 } from "@hugeicons/core-free-icons"
 import { canDetachAudio, DEFAULT_PROPS } from "../../lib/clips"
+import { useT } from "../../lib/i18n"
 import { timecode } from "../../lib/time"
 import { useEditor } from "../../store/editor"
 import type { Clip, ClipProps, MediaItem } from "../../types"
@@ -28,6 +29,7 @@ type Tab = "text" | "transform" | "audio"
 
 export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }) {
 
+  const t = useT()
   const { checkpoint, updateClipProps, updateClipText, resetTransform, detachAudio } = useEditor.getState()
   const locked = useEditor((s) => !!s.tracks.find((t) => t.id === clip.trackId)?.locked)
   const fps = useEditor((s) => s.settings.fps)
@@ -38,9 +40,9 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
 
   const tabs: { id: Tab; label: string; icon: IconSvgElement }[] = []
 
-  if (clip.type === "text") tabs.push({ id: "text", label: "Text", icon: TextIcon })
-  if (clip.type !== "audio") tabs.push({ id: "transform", label: "Transform", icon: Move01Icon })
-  if (clip.type === "audio" || (clip.type === "video" && !isImage && !clip.audioDetached && media?.hasAudio !== false)) tabs.push({ id: "audio", label: "Audio", icon: MusicNote01Icon })
+  if (clip.type === "text") tabs.push({ id: "text", label: t("type.text"), icon: TextIcon })
+  if (clip.type !== "audio") tabs.push({ id: "transform", label: t("inspector.transform"), icon: Move01Icon })
+  if (clip.type === "audio" || (clip.type === "video" && !isImage && !clip.audioDetached && media?.hasAudio !== false)) tabs.push({ id: "audio", label: t("type.audio"), icon: MusicNote01Icon })
 
   const tab = tabs.find((t) => t.id === picked)?.id ?? tabs[0].id
 
@@ -59,13 +61,13 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
         {clip.name}
       </h2>
       <div className="flex flex-col gap-3">
-        <InfoRow icon={Layers01Icon} label="Type">
+        <InfoRow icon={Layers01Icon} label={t("inspector.type")}>
           <TypeChip type={isImage ? "image" : clip.type} />
         </InfoRow>
-        <InfoRow icon={Clock01Icon} label="Start">
+        <InfoRow icon={Clock01Icon} label={t("inspector.start")}>
           <TimePill>{timecode(clip.start, fps)}</TimePill>
         </InfoRow>
-        <InfoRow icon={Timer01Icon} label="Duration">
+        <InfoRow icon={Timer01Icon} label={t("field.duration")}>
           <TimePill>{timecode(clip.duration, fps)}</TimePill>
         </InfoRow>
       </div>
@@ -82,11 +84,11 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
               rows={3}
               className="w-full resize-none rounded-md bg-raised px-2.5 py-2 text-body text-fg outline-none focus:outline-2 focus:outline-primary"
             />
-            <PropertyRow icon={TextFontIcon} label="Size" value={clip.text.size} step={1} onBegin={checkpoint} onChange={(v) => updateClipText(clip.id, { size: v })} min={8} max={600} unit="px" />
+            <PropertyRow icon={TextFontIcon} label={t("inspector.size")} value={clip.text.size} step={1} onBegin={checkpoint} onChange={(v) => updateClipText(clip.id, { size: v })} min={8} max={600} unit="px" />
             <div className="flex h-8 items-center">
               <span className="flex w-[112px] shrink-0 items-center gap-2 text-label">
                 <Icon icon={ColorPickerIcon} />
-                Color
+                {t("inspector.color")}
               </span>
               <label className="flex h-8 flex-1 items-center gap-2 rounded-md bg-raised px-2 focus-within:outline-2 focus-within:outline-primary">
                 <span className="h-4 w-4 rounded-xs ring-1 ring-border-strong" style={{ background: clip.text.color }} />
@@ -99,22 +101,22 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
 
         {tab === "transform" && (
           <>
-            <PropertyRow icon={MoveHorizontalIcon} label="Position X" value={p.x} onBegin={checkpoint} onChange={(x) => set({ x })} unit="px" />
-            <PropertyRow icon={MoveVerticalIcon} label="Position Y" value={p.y} onBegin={checkpoint} onChange={(y) => set({ y })} unit="px" />
-            <PropertyRow icon={ZoomInIcon} label="Scale" value={p.scale} onBegin={checkpoint} onChange={(scale) => set({ scale })} min={1} max={1000} step={0.5} unit="%" />
-            <PropertyRow icon={Rotate01Icon} label="Rotation" value={p.rotation} onBegin={checkpoint} onChange={(rotation) => set({ rotation })} min={-360} max={360} step={0.5} unit="°" />
-            <PropertyRow icon={TransparencyIcon} label="Opacity" value={p.opacity} onBegin={checkpoint} onChange={(opacity) => set({ opacity })} min={0} max={100} step={0.5} unit="%" />
+            <PropertyRow icon={MoveHorizontalIcon} label={t("inspector.positionX")} value={p.x} onBegin={checkpoint} onChange={(x) => set({ x })} unit="px" />
+            <PropertyRow icon={MoveVerticalIcon} label={t("inspector.positionY")} value={p.y} onBegin={checkpoint} onChange={(y) => set({ y })} unit="px" />
+            <PropertyRow icon={ZoomInIcon} label={t("inspector.scale")} value={p.scale} onBegin={checkpoint} onChange={(scale) => set({ scale })} min={1} max={1000} step={0.5} unit="%" />
+            <PropertyRow icon={Rotate01Icon} label={t("inspector.rotation")} value={p.rotation} onBegin={checkpoint} onChange={(rotation) => set({ rotation })} min={-360} max={360} step={0.5} unit="°" />
+            <PropertyRow icon={TransparencyIcon} label={t("inspector.opacity")} value={p.opacity} onBegin={checkpoint} onChange={(opacity) => set({ opacity })} min={0} max={100} step={0.5} unit="%" />
             <ResetRow onReset={() => resetTransform(clip.id)} />
           </>
         )}
 
         {tab === "audio" && (
           <>
-            <PropertyRow icon={VolumeHighIcon} label="Volume" value={p.volume} onBegin={checkpoint} onChange={(volume) => set({ volume })} min={0} max={100} step={0.5} unit="%" />
+            <PropertyRow icon={VolumeHighIcon} label={t("inspector.volume")} value={p.volume} onBegin={checkpoint} onChange={(volume) => set({ volume })} min={0} max={100} step={0.5} unit="%" />
             <ResetRow onReset={() => (checkpoint(), set({ volume: DEFAULT_PROPS.volume }))}>
               {canDetachAudio(clip, media) && (
                 <Button icon={AudioWave01Icon} onClick={detachAudio} disabled={locked}>
-                  Detach audio
+                  {t("timeline.detach")}
                 </Button>
               )}
             </ResetRow>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { ExportDialog } from "./components/dialogs/ExportDialog"
+import { LanguageDialog } from "./components/dialogs/LanguageDialog"
 import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
 import { RendersDialog } from "./components/dialogs/RendersDialog"
 import { Inspector } from "./components/inspector/Inspector"
@@ -12,6 +13,7 @@ import { Viewer } from "./components/viewer/Viewer"
 import { useFileDrop } from "./hooks/useFileDrop"
 import { usePlaybackClock } from "./hooks/usePlaybackClock"
 import { useShortcuts } from "./hooks/useShortcuts"
+import { useT } from "./lib/i18n"
 import { trackPointer } from "./lib/pointer"
 import { startSession } from "./lib/project/session"
 import { openDialog, useOverlays } from "./store/overlays"
@@ -23,6 +25,7 @@ const MIN_UPPER = 300
 
 export default function App() {
 
+  const t = useT()
   const dialog = useOverlays((s) => s.dialog)
   const closeDialog = useCallback(() => openDialog(null), [])
   const [timelineH, setTimelineH] = useState(() => Math.round((window.innerHeight - TOP_BAR) * 0.42))
@@ -55,13 +58,14 @@ export default function App() {
           <Viewer />
           <Inspector />
         </div>
-        <div className="h-2 shrink-0 cursor-row-resize" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label="Resize timeline" />
+        <div className="h-2 shrink-0 cursor-row-resize" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label={t("app.resizeTimeline")} />
         <Timeline height={timelineH} />
       </main>
       <DragGhost />
       {dialog === "export" && <ExportDialog onClose={closeDialog} />}
       {dialog === "settings" && <ProjectSettingsDialog onClose={closeDialog} />}
       {dialog === "renders" && <RendersDialog onClose={closeDialog} />}
+      {dialog === "language" && <LanguageDialog onClose={closeDialog} />}
       <Overlays />
     </div>
   )

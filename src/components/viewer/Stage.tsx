@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { CrosshairIcon, PauseIcon, PlayIcon, PreviousIcon, SquareSplitHorizontalIcon, TextIcon } from "@hugeicons/core-free-icons"
 import { clipEnd } from "../../lib/clips"
+import { t, useT } from "../../lib/i18n"
 import { trackPointer } from "../../lib/pointer"
 import { audible } from "../../lib/render/compose"
 import { ticks } from "../../lib/time"
@@ -15,6 +16,7 @@ const CENTER_SNAP_PX = 8
 
 export function Stage() {
 
+  const t = useT()
   const playhead = useEditor((s) => s.playhead)
   const clips = useEditor((s) => s.clips)
   const tracks = useEditor((s) => s.tracks)
@@ -74,7 +76,7 @@ export function Stage() {
             }),
         )}
         {clips.length === 0 && (
-          <p className="absolute inset-0 flex items-center justify-center text-h-sm text-white/60">Drag footage onto the timeline to see it here.</p>
+          <p className="absolute inset-0 flex items-center justify-center text-h-sm text-white/60">{t("viewer.empty")}</p>
         )}
         {(showGuides || centered.x) && <div className={`pointer-events-none absolute inset-y-0 left-1/2 z-40 w-px -translate-x-1/2 ${centered.x ? "bg-guide" : "bg-white/40"}`} />}
         {(showGuides || centered.y) && <div className={`pointer-events-none absolute inset-x-0 top-1/2 z-40 h-px -translate-y-1/2 ${centered.y ? "bg-guide" : "bg-white/40"}`} />}
@@ -88,12 +90,12 @@ function stageMenu(e: React.MouseEvent) {
   const s = useEditor.getState()
   const empty = s.clips.length === 0
   openMenu(e, [
-    { label: s.playing ? "Pause" : "Play", icon: s.playing ? PauseIcon : PlayIcon, kbd: "Space", disabled: empty, onSelect: s.togglePlay },
-    { label: "Go to start", icon: PreviousIcon, kbd: "Home", disabled: empty, onSelect: () => s.setPlayhead(0) },
+    { label: t(s.playing ? "viewer.pause" : "viewer.play"), icon: s.playing ? PauseIcon : PlayIcon, kbd: t("key.space"), disabled: empty, onSelect: s.togglePlay },
+    { label: t("viewer.goToStart"), icon: PreviousIcon, kbd: "Home", disabled: empty, onSelect: () => s.setPlayhead(0) },
     "divider",
-    { label: "Split at playhead", icon: SquareSplitHorizontalIcon, kbd: "S", disabled: empty, onSelect: s.splitAtPlayhead },
-    { label: "Add title at playhead", icon: TextIcon, kbd: "T", onSelect: s.addTitle },
+    { label: t("timeline.splitTip"), icon: SquareSplitHorizontalIcon, kbd: "S", disabled: empty, onSelect: s.splitAtPlayhead },
+    { label: t("timeline.addTitle"), icon: TextIcon, kbd: "T", onSelect: s.addTitle },
     "divider",
-    { label: "Center guides", icon: CrosshairIcon, kbd: "G", checked: s.showGuides, onSelect: s.toggleGuides },
+    { label: t("viewer.guides"), icon: CrosshairIcon, kbd: "G", checked: s.showGuides, onSelect: s.toggleGuides },
   ])
 }

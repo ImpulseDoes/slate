@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { clipEnd, clipTypeForMedia, DEFAULT_PROPS, linkedWith, lockedTrackIds, makeTrack, overwriteRange, projectDuration, regrid, trackKindFor } from "../lib/clips"
+import { t, translate, useLanguage } from "../lib/i18n"
 import { uid } from "../lib/platform"
 import { frameTicks, sameFps, ticks, toFrame } from "../lib/time"
 import { DEFAULT_SETTINGS, type Clip, type ClipProps, type MediaItem, type ProjectSettings, type TextProps, type Track } from "../types"
@@ -133,7 +134,7 @@ const markOf = (s: Pick<EditorState, "projectName" | "tracks" | "clips" | "setti
 export const newProject = (): ProjectDocument => ({
   id: crypto.randomUUID(),
   path: null,
-  name: "Untitled project",
+  name: t("project.untitled"),
   settings: DEFAULT_SETTINGS,
   media: [],
   tracks: defaultTracks,
@@ -261,7 +262,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       clip = { ...base, type, mediaId, name: m.name, duration: Math.max(frameTicks(fps), toFrame(m.duration, fps)) }
     } else {
       if (track.kind !== "video") return
-      clip = { ...base, type: "text", name: "Title", duration: toFrame(TITLE_DURATION, fps), text: { content: "Your title here", size: 96, color: "#ffffff" } }
+      clip = { ...base, type: "text", name: t("clip.defaultName"), duration: toFrame(TITLE_DURATION, fps), text: { content: t("clip.defaultText"), size: 96, color: "#ffffff" } }
     }
     get().checkpoint()
     set((s) => ({
@@ -305,7 +306,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set((s) => ({
       clips: s.clips.map((c) =>
         c.id === id && c.text
-          ? { ...c, text: { ...c.text, ...patch }, name: patch.content !== undefined ? patch.content.split("\n")[0] || "Title" : c.name }
+          ? { ...c, text: { ...c.text, ...patch }, name: patch.content !== undefined ? patch.content.split("\n")[0] || t("clip.defaultName") : c.name }
           : c,
       ),
     })),
@@ -477,3 +478,11 @@ function placeCopies(get: () => EditorState, set: (patch: (s: EditorState) => Pa
     selectedClipIds: copies.map((c) => c.id),
   }))
 }
+
+// An unsaved project's default name is Slate's wording, not the user's, so it follows the language.
+useLanguage.subscribe(({ language }, previous) => {
+  const { projectPath, projectName, saved } = useEditor.getState()
+  if (projectPath || projectName !== translate(previous.language, "project.untitled")) return
+  const name = translate(language, "project.untitled")
+  useEditor.setState({ projectName: name, saved: { ...saved, name } })
+})

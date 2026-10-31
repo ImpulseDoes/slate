@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { create } from "zustand"
+import { errorText } from "../lib/errors"
 import { uid } from "../lib/platform"
 import type { RenderPlan } from "../lib/render/plan"
 
@@ -59,7 +60,7 @@ async function runNext() {
     })
     patch(job.id, { status: "done", progress: 1, finishedAt: Date.now() })
   } catch (err) {
-    const error = String(err)
+    const error = errorText(err)
     if (error === "cancelled") patch(job.id, { status: "cancelled", finishedAt: Date.now() })
     else patch(job.id, { status: "failed", error, finishedAt: Date.now() })
   }

@@ -93,7 +93,7 @@ fn ffmpeg() -> Command {
 }
 
 fn start_failed(error: io::Error) -> String {
-    format!("Couldn't start FFmpeg: {error}")
+    format!("ffmpeg-start: {error}")
 }
 
 /// Scratch space beside the output, so the finished file only has to be renamed.
@@ -160,7 +160,7 @@ fn run_step(app: &AppHandle, id: &str, step: usize, args: &[String], work: &Path
     if status.success() {
         return Ok(());
     }
-    Err(if errors.is_empty() { format!("FFmpeg stopped: {status}") } else { errors })
+    Err(if errors.is_empty() { format!("ffmpeg-exit: {status}") } else { errors })
 }
 
 fn run(app: &AppHandle, job: &RenderJob, control: &Control, work: &Path) -> Result<(), String> {

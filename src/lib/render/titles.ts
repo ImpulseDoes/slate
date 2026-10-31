@@ -1,4 +1,5 @@
 import type { TextProps } from "../../types"
+import { t } from "../i18n"
 
 // Matches the padding around a title in the viewer, as a share of the frame's width.
 const PADDING = 0.04
@@ -26,7 +27,7 @@ export async function drawTitle(text: TextProps, width: number, height: number, 
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("Couldn't draw a title.")
+  if (!ctx) throw new Error(t("export.drawFailed"))
   const font = `600 ${fontSize}px Inter`
   await document.fonts.load(font, text.content)
   ctx.font = font
@@ -42,6 +43,6 @@ export async function drawTitle(text: TextProps, width: number, height: number, 
   lines.forEach((line, i) => ctx.fillText(line, width / 2, top + i * lineHeight + (lineHeight - (ascent + descent)) / 2 + ascent))
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
-  if (!blob) throw new Error("Couldn't draw a title.")
+  if (!blob) throw new Error(t("export.drawFailed"))
   return [...new Uint8Array(await blob.arrayBuffer())]
 }

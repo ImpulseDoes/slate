@@ -11,12 +11,14 @@ import {
   ZoomInAreaIcon,
   ZoomOutAreaIcon,
 } from "@hugeicons/core-free-icons"
+import { useT } from "../../lib/i18n"
 import { MOD } from "../../lib/platform"
 import { MAX_ZOOM, MIN_ZOOM, useEditor } from "../../store/editor"
 import { canLinkSelection, detachableClips, hasLinkedSelection, mergeableRuns } from "../../store/selectors"
 import { Button, Tip } from "../ui"
 
 export function Toolbar({ onFit }: { onFit: () => void }) {
+  const t = useT()
   const snapping = useEditor((s) => s.snapping)
   const pps = useEditor((s) => s.pxPerSec)
   const hasSelection = useEditor((s) => s.selectedClipIds.length > 0)
@@ -31,54 +33,54 @@ export function Toolbar({ onFit }: { onFit: () => void }) {
 
   return (
     <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3">
-      <Tip label="Split at playhead" kbd="S">
+      <Tip label={t("timeline.splitTip")} kbd="S">
         <Button variant="quiet" icon={SquareSplitHorizontalIcon} onClick={splitAtPlayhead} disabled={!hasClips}>
-          Split
+          {t("timeline.split")}
         </Button>
       </Tip>
-      <Tip label="Move the sound to its own track" kbd="A">
+      <Tip label={t("timeline.detachTip")} kbd="A">
         <Button variant="quiet" icon={AudioWave01Icon} onClick={detachAudio} disabled={!canDetach}>
-          Detach audio
+          {t("timeline.detach")}
         </Button>
       </Tip>
       {canLink || !canUnlink ? (
-        <Tip label="Cut and move these clips together" kbd={`${MOD} L`}>
+        <Tip label={t("timeline.linkTip")} kbd={`${MOD} L`}>
           <Button variant="quiet" icon={Link01Icon} onClick={linkSelected} disabled={!canLink}>
-            Link
+            {t("timeline.link")}
           </Button>
         </Tip>
       ) : (
-        <Tip label="Let these clips move on their own" kbd={`${MOD} ⇧ L`}>
+        <Tip label={t("timeline.unlinkTip")} kbd={`${MOD} ⇧ L`}>
           <Button variant="quiet" icon={Unlink01Icon} onClick={unlinkSelected}>
-            Unlink
+            {t("timeline.unlink")}
           </Button>
         </Tip>
       )}
-      <Tip label="Rejoin clips cut from the same source" kbd="M">
+      <Tip label={t("timeline.mergeTip")} kbd="M">
         <Button variant="quiet" icon={CombineIcon} onClick={mergeSelected} disabled={!canMerge}>
-          Merge
+          {t("timeline.merge")}
         </Button>
       </Tip>
-      <Tip label="Delete" kbd="Del">
+      <Tip label={t("common.delete")} kbd="Del">
         <Button variant="quiet" icon={Delete02Icon} onClick={deleteSelected} disabled={!hasSelection}>
-          Delete
+          {t("common.delete")}
         </Button>
       </Tip>
-      <Tip label="Add title at playhead" kbd="T">
+      <Tip label={t("timeline.addTitle")} kbd="T">
         <Button variant="quiet" icon={TextIcon} onClick={addTitle}>
-          Title
+          {t("timeline.title")}
         </Button>
       </Tip>
       <div className="flex-1" />
-      <Tip label={snapping ? "Snapping on" : "Snapping off"} kbd="N">
-        <Button variant="quiet" icon={Magnet01Icon} active={snapping} onClick={toggleSnapping} aria-pressed={snapping} aria-label="Snapping" />
+      <Tip label={t(snapping ? "timeline.snappingOn" : "timeline.snappingOff")} kbd="N">
+        <Button variant="quiet" icon={Magnet01Icon} active={snapping} onClick={toggleSnapping} aria-pressed={snapping} aria-label={t("timeline.snapping")} />
       </Tip>
-      <Tip label="Fit timeline to window">
-        <Button variant="quiet" icon={FitToScreenIcon} onClick={onFit} disabled={!hasClips} aria-label="Fit timeline to window" />
+      <Tip label={t("timeline.fit")}>
+        <Button variant="quiet" icon={FitToScreenIcon} onClick={onFit} disabled={!hasClips} aria-label={t("timeline.fit")} />
       </Tip>
       <div className="mx-1 h-5 w-px bg-border" />
-      <Tip label="Zoom out" kbd="−">
-        <Button variant="quiet" icon={ZoomOutAreaIcon} onClick={() => setZoom(pps / 1.5)} aria-label="Zoom out" />
+      <Tip label={t("timeline.zoomOut")} kbd="−">
+        <Button variant="quiet" icon={ZoomOutAreaIcon} onClick={() => setZoom(pps / 1.5)} aria-label={t("timeline.zoomOut")} />
       </Tip>
       <input
         type="range"
@@ -87,11 +89,11 @@ export function Toolbar({ onFit }: { onFit: () => void }) {
         step={0.001}
         value={toSlider(pps)}
         onChange={(e) => setZoom(fromSlider(Number(e.target.value)))}
-        aria-label="Zoom"
+        aria-label={t("timeline.zoom")}
         className="h-1 w-28 accent-primary"
       />
-      <Tip label="Zoom in" kbd="+">
-        <Button variant="quiet" icon={ZoomInAreaIcon} onClick={() => setZoom(pps * 1.5)} aria-label="Zoom in" />
+      <Tip label={t("timeline.zoomIn")} kbd="+">
+        <Button variant="quiet" icon={ZoomInAreaIcon} onClick={() => setZoom(pps * 1.5)} aria-label={t("timeline.zoomIn")} />
       </Tip>
     </div>
   )

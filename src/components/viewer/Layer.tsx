@@ -1,8 +1,10 @@
+import { useT } from "../../lib/i18n"
 import type { Clip, MediaItem, ProjectSettings } from "../../types"
 import { SyncedMedia } from "./SyncedMedia"
 
 export function Layer({ clip, media, visible, muted, z, settings, onMove }: { clip: Clip; media?: MediaItem; visible: boolean; muted: boolean; z: number; settings: ProjectSettings; onMove: (e: React.PointerEvent, clip: Clip) => void }) {
 
+  const t = useT()
   const { x, y, scale, rotation, opacity } = clip.props
   const grab = (e: React.PointerEvent) => onMove(e, clip)
   const style: React.CSSProperties = {
@@ -25,7 +27,7 @@ export function Layer({ clip, media, visible, muted, z, settings, onMove }: { cl
 
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-[#2a1214] text-h-sm text-white/80" style={{ zIndex: z, display: visible ? undefined : "none" }}>
-        Media offline: {media.name}
+        {t("viewer.offline", { name: media.name })}
       </div>
     )
   }

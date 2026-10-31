@@ -6,6 +6,7 @@ import { useRenders } from "../../store/renders"
 import { liveMedia } from "../../store/selectors"
 import { clipEnd } from "../clips"
 import { errorText } from "../errors"
+import { t } from "../i18n"
 import { baseName } from "../paths"
 import { assumedMatrix, CONTAINER, planRender, type ExportOptions, type TitleImage } from "./plan"
 import { drawTitle } from "./titles"
@@ -19,8 +20,8 @@ export function checkExportable(range: [number, number]): string | null {
   const used = state.clips.filter((c) => c.mediaId && c.start < range[1] && clipEnd(c) > range[0]).map((c) => media.get(c.mediaId!))
   const missing = [...new Set(used.filter((m) => m?.status === "missing" || m?.status === "error").map((m) => m!.name))]
 
-  if (missing.length) return `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} offline. Locate ${missing.length === 1 ? "it" : "them"} before exporting.`
-  if (used.some((m) => m?.status === "loading")) return "Still reading your media. Try again in a moment."
+  if (missing.length) return t("export.offline", { names: missing.join(", "), count: missing.length })
+  if (used.some((m) => m?.status === "loading")) return t("export.stillReading")
 
   return null
 }
@@ -30,7 +31,7 @@ export async function queueExport(options: ExportOptions): Promise<boolean> {
   const state = useEditor.getState()
   const extension = CONTAINER[options.codec]
   const output = await save({
-    title: "Export video",
+    title: t("export.saveTitle"),
     defaultPath: `${state.projectName}.${extension}`,
     filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
   })

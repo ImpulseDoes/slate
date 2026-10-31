@@ -1,5 +1,6 @@
 import { memo } from "react"
 import { Link01Icon } from "@hugeicons/core-free-icons"
+import { useT } from "../../lib/i18n"
 import type { Clip, MediaItem } from "../../types"
 import { CLIP_COLORS, Icon } from "../ui"
 import { Filmstrip } from "./Filmstrip"
@@ -21,6 +22,7 @@ interface ClipViewProps {
 }
 
 export const ClipView = memo(function ClipView({ clip, media, ppt, height, selected, dragging, linked, locked, onDragStart }: ClipViewProps) {
+  const t = useT()
   const left = clip.start * ppt
   const width = Math.max(2, clip.duration * ppt)
   const offline = media?.status === "missing"
@@ -36,7 +38,7 @@ export const ClipView = memo(function ClipView({ clip, media, ppt, height, selec
     >
       <div className="flex items-center gap-1 px-2 text-small font-semibold" style={{ height: CLIP_LABEL_H }}>
         {linked && <Icon icon={Link01Icon} size={12} className="shrink-0" />}
-        <span className="truncate">{offline ? `Offline: ${clip.name}` : clip.name}</span>
+        <span className="truncate">{offline ? t("clip.offline", { name: clip.name }) : clip.name}</span>
       </div>
       <div className="relative overflow-hidden" style={{ height: height - 4 - CLIP_LABEL_H }}>
         {clip.type === "video" && media && <Filmstrip clip={clip} media={media} ppt={ppt} width={width} height={height - 4 - CLIP_LABEL_H} />}

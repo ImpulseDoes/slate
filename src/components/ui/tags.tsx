@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import type { IconSvgElement } from "@hugeicons/react"
 import { Image01Icon, MusicNote01Icon, TextIcon, Video01Icon } from "@hugeicons/core-free-icons"
+import { useT, type Key } from "../../lib/i18n"
 import type { ClipType, MediaKind } from "../../types"
 import { CLIP_COLORS } from "./clipColors"
 import { Icon } from "./Icon"
@@ -14,21 +15,22 @@ export function TimePill({ children, icon, className = "" }: { children: ReactNo
   )
 }
 
-const chipMeta: Record<ClipType | MediaKind, { label: string; icon: IconSvgElement }> = {
-  video: { label: "Video", icon: Video01Icon },
-  image: { label: "Image", icon: Image01Icon },
-  audio: { label: "Audio", icon: MusicNote01Icon },
-  text: { label: "Text", icon: TextIcon },
+const chipMeta: Record<ClipType | MediaKind, { label: Key; icon: IconSvgElement }> = {
+  video: { label: "type.video", icon: Video01Icon },
+  image: { label: "type.image", icon: Image01Icon },
+  audio: { label: "type.audio", icon: MusicNote01Icon },
+  text: { label: "type.text", icon: TextIcon },
 }
 
 export function TypeChip({ type, compact }: { type: ClipType | MediaKind; compact?: boolean }) {
 
+  const t = useT()
   const m = chipMeta[type]
 
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 font-semibold uppercase text-caps ${CLIP_COLORS[type]} ${compact ? "h-5 rounded-xs px-1" : "h-6 rounded-sm px-1.5"}`}>
       <Icon icon={m.icon} size={compact ? 12 : 14} />
-      {m.label}
+      {t(m.label)}
     </span>
   )
 }

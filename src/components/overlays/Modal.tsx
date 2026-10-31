@@ -1,9 +1,11 @@
 import { useEffect, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
+import { useT } from "../../lib/i18n"
 import { Button } from "../ui"
 
 export function Modal({ title, labelId, onClose, footer, children, width = 400, closeButton }: { title: string; labelId: string; onClose: () => void; footer: ReactNode; children: ReactNode; width?: number; closeButton?: boolean }) {
+  const t = useT()
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose()
     window.addEventListener("keydown", onKey)
@@ -18,7 +20,7 @@ export function Modal({ title, labelId, onClose, footer, children, width = 400, 
             <h1 id={labelId} className="text-h-md font-semibold">
               {title}
             </h1>
-            {closeButton && <Button variant="quiet" icon={Cancel01Icon} onClick={onClose} aria-label="Close" className="-mt-1 -mr-1" />}
+            {closeButton && <Button variant="quiet" icon={Cancel01Icon} onClick={onClose} aria-label={t("common.close")} className="-mt-1 -mr-1" />}
           </div>
           <div className="mt-2">{children}</div>
         </div>

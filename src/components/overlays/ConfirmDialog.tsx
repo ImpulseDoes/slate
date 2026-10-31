@@ -1,9 +1,11 @@
 import { Delete02Icon } from "@hugeicons/core-free-icons"
+import { useT } from "../../lib/i18n"
 import type { ConfirmState } from "../../store/overlays"
 import { Button } from "../ui"
 import { Modal } from "./Modal"
 
-export function ConfirmDialog({ title, body, action, onConfirm, onClose, tone = "danger", cancelLabel = "Cancel", onCancel, alternate }: ConfirmState & { onClose: () => void }) {
+export function ConfirmDialog({ title, body, action, onConfirm, onClose, tone = "danger", cancelLabel, onCancel, alternate }: ConfirmState & { onClose: () => void }) {
+  const t = useT()
   return (
     <Modal
       title={title}
@@ -28,7 +30,7 @@ export function ConfirmDialog({ title, body, action, onConfirm, onClose, tone = 
               onCancel?.()
             }}
           >
-            {cancelLabel}
+            {cancelLabel ?? t("common.cancel")}
           </Button>
           <Button
             variant={tone}

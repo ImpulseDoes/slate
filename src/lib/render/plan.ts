@@ -1,4 +1,5 @@
 import type { Clip, MediaItem, ProjectSettings, Track } from "../../types"
+import { t } from "../i18n"
 import { frameTicks, sec, TICKS, type Fps } from "../time"
 import { audible, placeLayer } from "./compose"
 
@@ -199,7 +200,7 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
 export function planRender(source: RenderSource, options: ExportOptions): RenderPlan {
   const frameLength = frameTicks(options.fps)
   const frames = Math.round((options.range[1] - options.range[0]) / frameLength)
-  if (frames < 1) throw new Error("There's nothing to export in that range.")
+  if (frames < 1) throw new Error(t("export.nothing"))
 
   const pieces = buildPieces(source, options, frameLength)
   const anyAudio = pieces.some((p) => p.audio)

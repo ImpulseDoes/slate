@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog"
 import { liveMedia } from "../../store/selectors"
 import { useEditor } from "../../store/editor"
 import type { MediaItem, MediaKind } from "../../types"
+import { t } from "../i18n"
 import { baseName, dirName, joinPath } from "../paths"
 import { isTauri, uid } from "../platform"
 import { probe } from "./probe"
@@ -26,8 +27,8 @@ export async function pickAndImport() {
 
     const picked = await open({
       multiple: true,
-      title: "Import media",
-      filters: [{ name: "Media", extensions: ALL_EXTENSIONS }],
+      title: t("media.importMedia"),
+      filters: [{ name: t("media.title"), extensions: ALL_EXTENSIONS }],
     })
     if (picked) importPaths(Array.isArray(picked) ? picked : [picked])
     return
@@ -76,8 +77,8 @@ export const unresolvedMedia = () => liveMedia(useEditor.getState()).filter((m) 
 
 export async function relinkMissing(item: MediaItem) {
   const picked = await open({
-    title: `Locate ${item.name}`,
-    filters: [{ name: item.kind, extensions: EXTENSIONS[item.kind] }],
+    title: t("media.locateTitle", { name: item.name }),
+    filters: [{ name: t(`type.${item.kind}`), extensions: EXTENSIONS[item.kind] }],
   })
   if (!picked) return
   relink(item, picked)

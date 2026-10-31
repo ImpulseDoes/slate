@@ -1,6 +1,7 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { Add01Icon, AlertCircleIcon, Clock01Icon, Delete02Icon, FileSearchIcon, FolderOpenIcon, Image01Icon, MusicNote01Icon } from "@hugeicons/core-free-icons"
 import { clipTypeForMedia, trackKindFor } from "../../lib/clips"
+import { t, useT } from "../../lib/i18n"
 import { relinkMissing } from "../../lib/media/importer"
 import { isTauri } from "../../lib/platform"
 import { trackPointer } from "../../lib/pointer"
@@ -20,9 +21,9 @@ function requestRemove(item: MediaItem) {
   if (!used) return removeMedia(item.id)
 
   confirmAction({
-    title: "Remove from project?",
-    body: `${item.name} is used by ${used} ${used === 1 ? "clip" : "clips"} on the timeline. ${used === 1 ? "It" : "They"} will be removed too.`,
-    action: "Remove",
+    title: t("media.removeTitle"),
+    body: t("media.removeBody", { name: item.name, count: used }),
+    action: t("common.remove"),
     onConfirm: () => removeMedia(item.id),
   })
 }
@@ -30,19 +31,20 @@ function requestRemove(item: MediaItem) {
 function mediaMenu(e: React.MouseEvent, item: MediaItem) {
   useEditor.getState().selectMedia(item.id)
   const offline = item.status === "missing"
-  const reveal: MenuEntry[] = isTauri && !offline ? [{ label: "Show in folder", icon: FolderOpenIcon, onSelect: () => void revealItemInDir(item.path) }] : []
-  const relink: MenuEntry[] = isTauri && offline ? [{ label: "Locate file", icon: FileSearchIcon, onSelect: () => void relinkMissing(item) }] : []
+  const reveal: MenuEntry[] = isTauri && !offline ? [{ label: t("media.showInFolder"), icon: FolderOpenIcon, onSelect: () => void revealItemInDir(item.path) }] : []
+  const relink: MenuEntry[] = isTauri && offline ? [{ label: t("media.locateFile"), icon: FileSearchIcon, onSelect: () => void relinkMissing(item) }] : []
   openMenu(e, [
-    { label: "Add to timeline", icon: Add01Icon, disabled: item.status !== "ready", onSelect: () => insertAtPlayhead(item) },
+    { label: t("media.addToTimeline"), icon: Add01Icon, disabled: item.status !== "ready", onSelect: () => insertAtPlayhead(item) },
     ...relink,
     ...reveal,
     "divider",
-    { label: "Remove from project", icon: Delete02Icon, danger: true, onSelect: () => requestRemove(item) },
+    { label: t("media.removeFromProject"), icon: Delete02Icon, danger: true, onSelect: () => requestRemove(item) },
   ])
 }
 
 export function MediaRow({ item }: { item: MediaItem }) {
 
+  const t = useT()
   const selected = useEditor((s) => s.selectedMediaId === item.id)
   const ready = item.status === "ready"
 
@@ -85,23 +87,23 @@ export function MediaRow({ item }: { item: MediaItem }) {
         <div className={`truncate ${item.status === "error" || item.status === "missing" ? "text-label" : "text-fg"}`}>{item.name}</div>
         <div className="mt-1 flex items-center gap-2">
           {item.status === "missing" ? (
-            <Tip label={`Not found at ${item.path}`}>
+            <Tip label={t("media.notFound", { path: item.path })}>
               <button onClick={() => void relinkMissing(item)} onPointerDown={(e) => e.stopPropagation()}>
                 <StatusTag tone="error" icon={FileSearchIcon}>
-                  Locate
+                  {t("common.locate")}
                 </StatusTag>
               </button>
             </Tip>
           ) : item.status === "error" ? (
-            <Tip label={item.error ?? "This file can't be read."}>
+            <Tip label={item.error ?? t("probe.unreadable")}>
               <StatusTag tone="error" icon={AlertCircleIcon}>
-                Error
+                {t("media.error")}
               </StatusTag>
             </Tip>
           ) : (
             <TypeChip type={item.kind} compact />
           )}
-          {item.status === "loading" && <span className="text-small text-muted">Reading…</span>}
+          {item.status === "loading" && <span className="text-small text-muted">{t("media.reading")}</span>}
           {ready && item.kind !== "image" && (
             <span className="tnum inline-flex items-center gap-1 text-small text-label">
               <Icon icon={Clock01Icon} size={14} />
@@ -111,7 +113,7 @@ export function MediaRow({ item }: { item: MediaItem }) {
         </div>
       </div>
       <button
-        aria-label={`Remove ${item.name}`}
+        aria-label={t("media.removeItem", { name: item.name })}
         onPointerDown={(e) => e.stopPropagation()}
         onClick={() => requestRemove(item)}
         className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-label group-hover:inline-flex hover:bg-danger-soft hover:text-error"

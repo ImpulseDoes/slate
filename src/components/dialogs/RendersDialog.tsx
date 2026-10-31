@@ -1,21 +1,23 @@
 import { useEffect, useState } from "react"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { Cancel01Icon, FolderOpenIcon } from "@hugeicons/core-free-icons"
+import { useT, type Key } from "../../lib/i18n"
 import { shortDuration, ticks } from "../../lib/time"
 import { isActive, timeLeft, useRenders, type RenderJob, type RenderStatus } from "../../store/renders"
 import { Modal } from "../overlays/Modal"
 import { Button, StatusTag, Tip } from "../ui"
 
-const STATUS: Record<RenderStatus, { label: string; tone: "muted" | "error" | "progress" }> = {
-  queued: { label: "Queued", tone: "muted" },
-  running: { label: "Exporting", tone: "progress" },
-  done: { label: "Done", tone: "muted" },
-  failed: { label: "Failed", tone: "error" },
-  cancelled: { label: "Cancelled", tone: "muted" },
+const STATUS: Record<RenderStatus, { label: Key; tone: "muted" | "error" | "progress" }> = {
+  queued: { label: "render.status.queued", tone: "muted" },
+  running: { label: "render.status.running", tone: "progress" },
+  done: { label: "render.status.done", tone: "muted" },
+  failed: { label: "render.status.failed", tone: "error" },
+  cancelled: { label: "render.status.cancelled", tone: "muted" },
 }
 
 export function RendersDialog({ onClose }: { onClose: () => void }) {
 
+  const t = useT()
   const jobs = useRenders((s) => s.jobs)
   const clearFinished = useRenders((s) => s.clearFinished)
   const anyFinished = !jobs.every(isActive)
@@ -28,7 +30,7 @@ export function RendersDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="Exports"
+      title={t("render.title")}
       labelId="renders-title"
       onClose={onClose}
       closeButton
@@ -36,16 +38,16 @@ export function RendersDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Button onClick={clearFinished} disabled={!anyFinished}>
-            Clear finished
+            {t("render.clearFinished")}
           </Button>
           <Button variant="primary" onClick={onClose}>
-            Keep editing
+            {t("render.keepEditing")}
           </Button>
         </>
       }
     >
       {jobs.length === 0 ? (
-        <p className="mt-3 text-body text-muted">Nothing has been exported yet.</p>
+        <p className="mt-3 text-body text-muted">{t("render.empty")}</p>
       ) : (
         <ul className="mt-3 flex max-h-[420px] flex-col gap-3 overflow-y-auto">
           {jobs.map((job) => (
@@ -59,6 +61,7 @@ export function RendersDialog({ onClose }: { onClose: () => void }) {
 
 function JobRow({ job, now }: { job: RenderJob; now: number }) {
 
+  const t = useT()
   const { cancel, dismiss } = useRenders.getState()
   const status = STATUS[job.status]
   const active = isActive(job)
@@ -70,14 +73,14 @@ function JobRow({ job, now }: { job: RenderJob; now: number }) {
         <span className="min-w-0 flex-1 truncate text-fg" title={job.output}>
           {job.name}
         </span>
-        <StatusTag tone={status.tone}>{status.label}</StatusTag>
+        <StatusTag tone={status.tone}>{t(status.label)}</StatusTag>
         {job.status === "done" && (
-          <Tip label="Show in folder">
-            <Button variant="quiet" icon={FolderOpenIcon} aria-label="Show in folder" onClick={() => void revealItemInDir(job.output)} />
+          <Tip label={t("media.showInFolder")}>
+            <Button variant="quiet" icon={FolderOpenIcon} aria-label={t("media.showInFolder")} onClick={() => void revealItemInDir(job.output)} />
           </Tip>
         )}
-        <Tip label={active ? "Cancel export" : "Remove from list"}>
-          <Button variant="quiet" icon={Cancel01Icon} aria-label={active ? "Cancel export" : "Remove from list"} onClick={() => (active ? cancel(job.id) : dismiss(job.id))} />
+        <Tip label={t(active ? "render.cancel" : "render.dismiss")}>
+          <Button variant="quiet" icon={Cancel01Icon} aria-label={t(active ? "render.cancel" : "render.dismiss")} onClick={() => (active ? cancel(job.id) : dismiss(job.id))} />
         </Tip>
       </div>
       {job.status === "running" && (
@@ -87,7 +90,7 @@ function JobRow({ job, now }: { job: RenderJob; now: number }) {
           </div>
           <div className="tnum mt-1.5 flex justify-between text-small text-muted">
             <span>{Math.round(job.progress * 100)}%</span>
-            {left !== null && <span>{shortDuration(ticks(left))} left</span>}
+            {left !== null && <span>{t("render.left", { time: shortDuration(ticks(left)) })}</span>}
           </div>
         </>
       )}

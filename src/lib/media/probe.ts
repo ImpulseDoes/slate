@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { useEditor } from "../../store/editor"
 import { PEAKS_PER_SECOND, type MediaItem } from "../../types"
+import { t } from "../i18n"
 import { isTauri } from "../platform"
 import { ticks } from "../time"
 
@@ -40,7 +41,7 @@ export async function probe(item: MediaItem) {
 
       const v = el as HTMLVideoElement
 
-      if (!v.videoWidth) throw new Error("No video stream this webview can decode.")
+      if (!v.videoWidth) throw new Error(t("probe.noVideo"))
 
       update({ status: "ready", duration, width: v.videoWidth, height: v.videoHeight })
       update({ frames: await captureFrames(v, seconds) })
@@ -52,7 +53,7 @@ export async function probe(item: MediaItem) {
     el.removeAttribute("src")
     el.load()
   } catch (err) {
-    update({ status: "error", error: err instanceof Error ? err.message : "This file can't be read." })
+    update({ status: "error", error: err instanceof Error ? err.message : t("probe.unreadable") })
   }
 }
 
@@ -69,7 +70,7 @@ function once(el: HTMLMediaElement, event: string, timeoutMs = 15000) {
     const fail = () => {
       clearTimeout(timer)
       el.removeEventListener(event, done)
-      reject(new Error("This format isn't supported yet."))
+      reject(new Error(t("probe.unsupported")))
     }
 
     const timer = setTimeout(fail, timeoutMs)
@@ -85,7 +86,7 @@ function loadImage(src: string) {
     const img = new Image()
 
     img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error("This image can't be read."))
+    img.onerror = () => reject(new Error(t("probe.badImage")))
     img.src = src
   })
 }

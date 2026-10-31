@@ -4,6 +4,7 @@ import { Download04Icon } from "@hugeicons/core-free-icons"
 import { useShallow } from "zustand/react/shallow"
 import { projectDuration, selectionSpan } from "../../lib/clips"
 import { errorText } from "../../lib/errors"
+import { fpsText, useT, type Key } from "../../lib/i18n"
 import { isTauri } from "../../lib/platform"
 import { checkExportable, queueExport } from "../../lib/render/exporter"
 import { ENCODER, type Codec, type ExportOptions, type Quality, type Speed } from "../../lib/render/plan"
@@ -17,13 +18,13 @@ const PROJECT_VALUE = "project"
 const HEIGHTS = [2160, 1440, 1080, 720, 480]
 const CRF = { best: 16, high: 20, balanced: 24, small: 29 }
 
-type Preset = { id: string; label: string; codec: Codec; height: number | null; quality: string; mbps: number; speed: Speed }
+type Preset = { id: string; label: Key; codec: Codec; height: number | null; quality: string; mbps: number; speed: Speed }
 
 const PRESETS: Preset[] = [
-  { id: "web", label: "Web · H.264", codec: "h264", height: null, quality: "high", mbps: 12, speed: "medium" },
-  { id: "small", label: "Small file · H.265", codec: "h265", height: null, quality: "balanced", mbps: 8, speed: "medium" },
-  { id: "draft", label: "Quick draft · 720p", codec: "h264", height: 720, quality: "balanced", mbps: 5, speed: "veryfast" },
-  { id: "master", label: "Master · ProRes 422 HQ", codec: "prores", height: null, quality: "best", mbps: 0, speed: "medium" },
+  { id: "web", label: "export.preset.web", codec: "h264", height: null, quality: "high", mbps: 12, speed: "medium" },
+  { id: "small", label: "export.preset.small", codec: "h265", height: null, quality: "balanced", mbps: 8, speed: "medium" },
+  { id: "draft", label: "export.preset.draft", codec: "h264", height: 720, quality: "balanced", mbps: 5, speed: "veryfast" },
+  { id: "master", label: "export.preset.master", codec: "prores", height: null, quality: "best", mbps: 0, speed: "medium" },
 ]
 const CUSTOM = "custom"
 
@@ -33,12 +34,13 @@ function sizeFor(height: number, projectWidth: number, projectHeight: number) {
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
 
+  const t = useT()
   const duration = useEditor((s) => projectDuration(s.clips))
   const settings = useEditor((s) => s.settings)
   const selection = useEditor(useShallow((s) => selectionSpan(s.clips, s.selectedClipIds)))
 
   const [encoders, setEncoders] = useState<string[] | null>(null)
-  const [unavailable, setUnavailable] = useState<string | null>(isTauri ? null : "Exporting needs the desktop app.")
+  const [unavailable, setUnavailable] = useState<string | null>(isTauri ? null : t("export.needsDesktop"))
   const [presetId, setPresetId] = useState(PRESETS[0].id)
   const [codec, setCodec] = useState<Codec>("h264")
   const [height, setHeight] = useState(PROJECT_VALUE)
@@ -56,8 +58,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     if (!isTauri) return
     invoke<string[]>("render_encoders")
       .then(setEncoders)
-      .catch(() => setUnavailable("FFmpeg isn't available, so Slate can't export. Run scripts/fetch-ffmpeg.ts."))
-  }, [])
+      .catch(() => setUnavailable(t("export.noFfmpeg")))
+  }, [t])
 
   const applyPreset = (id: string) => {
     setPresetId(id)
@@ -81,7 +83,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const range: [number, number] = rangeKind === "selection" && selection ? selection : rangeKind === "custom" ? [ticks(customFrom), ticks(customTo)] : [0, duration]
 
   const frames = Math.max(0, frameIndex(range[1] - range[0], fps))
-  const blocker = unavailable ?? (frames < 1 ? "That range is empty." : checkExportable(range))
+  const blocker = unavailable ?? (frames < 1 ? t("export.emptyRange") : checkExportable(range))
 
   const start = async () => {
     const q: Quality = quality === "bitrate" ? { mode: "bitrate", mbps } : { mode: "quality", crf: CRF[quality as keyof typeof CRF] }
@@ -99,27 +101,27 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="Export"
+      title={t("export.title")}
       labelId="export-title"
       onClose={onClose}
       closeButton
       width={480}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
           <Button variant="primary" icon={Download04Icon} disabled={!!blocker || busy} onClick={() => void start()}>
-            Export
+            {t("common.export")}
           </Button>
         </>
       }
     >
       <div className="mt-3 flex flex-col gap-3">
-        <Field label="Preset">
-          <Select label="Preset" value={presetId} options={[...PRESETS.map((p) => ({ id: p.id, label: p.label })), { id: CUSTOM, label: "Custom" }]} onChange={applyPreset} />
+        <Field label={t("export.preset")}>
+          <Select label={t("export.preset")} value={presetId} options={[...PRESETS.map((p) => ({ id: p.id, label: t(p.label) })), { id: CUSTOM, label: t("common.custom") }]} onChange={applyPreset} />
         </Field>
-        <Field label="Format">
+        <Field label={t("export.format")}>
           <Select
-            label="Format"
+            label={t("export.format")}
             value={codec}
             onChange={custom(setCodec)}
             options={[
@@ -129,13 +131,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             ].map((o) => ({ ...o, disabled: !!encoders && !encoders.includes(ENCODER[o.id]) }))}
           />
         </Field>
-        <Field label="Resolution">
+        <Field label={t("field.resolution")}>
           <Select
-            label="Resolution"
+            label={t("field.resolution")}
             value={height}
             onChange={custom(setHeight)}
             options={[
-              { id: PROJECT_VALUE, label: `Project · ${settings.width} × ${settings.height}` },
+              { id: PROJECT_VALUE, label: t("export.projectValue", { value: `${settings.width} × ${settings.height}` }) },
               ...HEIGHTS.filter((h) => h !== settings.height).map((h) => {
                 const s = sizeFor(h, settings.width, settings.height)
                 return { id: String(h), label: `${s.width} × ${s.height}` }
@@ -143,66 +145,66 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             ]}
           />
         </Field>
-        <Field label="Frame rate">
+        <Field label={t("field.frameRate")}>
           <Select
-            label="Frame rate"
+            label={t("field.frameRate")}
             value={rate}
             onChange={custom(setRate)}
-            options={[{ id: PROJECT_VALUE, label: `Project · ${fpsLabel(settings.fps)} fps` }, ...FRAME_RATES.filter((r) => !sameFps(r.fps, settings.fps)).map((r) => ({ id: r.label, label: `${r.label} fps` }))]}
+            options={[{ id: PROJECT_VALUE, label: t("export.projectValue", { value: fpsText(fpsLabel(settings.fps)) }) }, ...FRAME_RATES.filter((r) => !sameFps(r.fps, settings.fps)).map((r) => ({ id: r.label, label: fpsText(r.label) }))]}
           />
         </Field>
         {codec !== "prores" && (
           <>
-            <Field label="Quality">
+            <Field label={t("export.quality")}>
               <Select
-                label="Quality"
+                label={t("export.quality")}
                 value={quality}
                 onChange={custom(setQuality)}
                 options={[
-                  { id: "best", label: "Best" },
-                  { id: "high", label: "High" },
-                  { id: "balanced", label: "Balanced" },
-                  { id: "small", label: "Smallest file" },
-                  { id: "bitrate", label: "Set a bitrate" },
+                  { id: "best", label: t("export.quality.best") },
+                  { id: "high", label: t("export.quality.high") },
+                  { id: "balanced", label: t("export.quality.balanced") },
+                  { id: "small", label: t("export.quality.small") },
+                  { id: "bitrate", label: t("export.quality.bitrate") },
                 ]}
               />
               {quality === "bitrate" && <NumberField value={mbps} onChange={custom(setMbps)} min={1} max={400} unit="Mbps" />}
             </Field>
-            <Field label="Encoding">
+            <Field label={t("export.encoding")}>
               <Select
-                label="Encoding speed"
+                label={t("export.encodingSpeed")}
                 value={speed}
                 onChange={custom(setSpeed)}
                 options={[
-                  { id: "veryfast" as Speed, label: "Fast, larger file" },
-                  { id: "medium" as Speed, label: "Balanced" },
-                  { id: "slow" as Speed, label: "Slow, smaller file" },
+                  { id: "veryfast" as Speed, label: t("export.speed.fast") },
+                  { id: "medium" as Speed, label: t("export.speed.balanced") },
+                  { id: "slow" as Speed, label: t("export.speed.slow") },
                 ]}
               />
             </Field>
           </>
         )}
-        <Field label="Range">
+        <Field label={t("export.range")}>
           <Select
-            label="Range"
+            label={t("export.range")}
             value={rangeKind}
             onChange={setRangeKind}
             options={[
-              { id: "all", label: "Whole timeline" },
-              { id: "selection", label: "Selected clips", disabled: !selection },
-              { id: "custom", label: "Custom" },
+              { id: "all", label: t("export.range.all") },
+              { id: "selection", label: t("export.range.selection"), disabled: !selection },
+              { id: "custom", label: t("common.custom") },
             ]}
           />
         </Field>
         {rangeKind === "custom" && (
-          <Field label="From, to">
+          <Field label={t("export.fromTo")}>
             <NumberField value={customFrom} onChange={setCustomFrom} min={0} step={sec(frameTicks(fps))} precision={2} unit="s" />
             <NumberField value={customTo} onChange={setCustomTo} min={0} step={sec(frameTicks(fps))} precision={2} unit="s" />
           </Field>
         )}
-        <Field label="Length">
+        <Field label={t("export.length")}>
           <TimePill>{timecode(range[1] - range[0], fps)}</TimePill>
-          <span className="tnum text-small text-muted">{frames.toLocaleString()} frames</span>
+          <span className="tnum text-small text-muted">{t("export.frames", { count: frames })}</span>
         </Field>
       </div>
       {(blocker || error) && <p className="mt-4 text-body text-error">{error ?? blocker}</p>}

@@ -7,6 +7,7 @@ import { runningRenders, useRenders } from "../../store/renders"
 import { isDirty } from "../../store/selectors"
 import type { MediaItem } from "../../types"
 import { errorText } from "../errors"
+import { formatDate, t } from "../i18n"
 import { relinkMissing, unresolvedMedia } from "../media/importer"
 import { probe } from "../media/probe"
 import { baseName, dirName, joinPath, stem } from "../paths"
@@ -54,7 +55,7 @@ async function writeTo(path: string, name: string): Promise<boolean> {
   try {
     await invoke("project_write", { path, contents: serialized({ ...state, projectName: name }) })
   } catch (err) {
-    notify(`Couldn't save the project: ${errorText(err)}`, "error")
+    notify(t("project.saveFailed", { detail: errorText(err) }), "error")
     return false
   }
   useEditor.getState().markSaved(path, name)
@@ -66,9 +67,9 @@ async function writeTo(path: string, name: string): Promise<boolean> {
 export async function saveProjectAs(): Promise<boolean> {
   const { projectName, projectPath } = useEditor.getState()
   const path = await save({
-    title: "Save project",
+    title: t("project.saveTitle"),
     defaultPath: projectPath ?? `${projectName}.${PROJECT_EXTENSION}`,
-    filters: [{ name: "Slate project", extensions: [PROJECT_EXTENSION] }],
+    filters: [{ name: t("project.fileType"), extensions: [PROJECT_EXTENSION] }],
   })
   return path ? writeTo(path, stem(path)) : false
 }
@@ -90,11 +91,11 @@ function whenSettled(then: () => void) {
     then()
   }
   confirmAction({
-    title: "Save your changes?",
-    body: `${state.projectName} has changes that aren't saved yet.`,
-    action: "Save",
+    title: t("unsaved.title"),
+    body: t("unsaved.body", { name: state.projectName }),
+    action: t("common.save"),
     tone: "primary",
-    alternate: { label: "Don't save", onSelect: discard },
+    alternate: { label: t("unsaved.discard"), onSelect: discard },
     onConfirm: () => void saveProject().then((saved) => saved && then()),
   })
 }
@@ -139,17 +140,17 @@ function promptMissing() {
   const missing = unresolvedMedia()
   if (!missing.length) return
   confirmAction({
-    title: `${missing.length} ${missing.length === 1 ? "file is" : "files are"} missing`,
-    body: `Slate can't find ${missing.length === 1 ? missing[0].name : `${missing[0].name} and ${missing.length - 1} more`}. Clips stay on the timeline and show as offline until you locate the ${missing.length === 1 ? "file" : "files"}.`,
-    action: "Locate",
+    title: t("missing.title", { count: missing.length }),
+    body: missing.length === 1 ? t("missing.body", { name: missing[0].name }) : t("missing.bodyMore", { name: missing[0].name, count: missing.length - 1 }),
+    action: t("common.locate"),
     tone: "primary",
-    cancelLabel: "Later",
+    cancelLabel: t("missing.later"),
     onConfirm: () => void relinkMissing(missing[0]),
   })
 }
 
 export async function openProject(known?: string) {
-  const path = known ?? (await open({ title: "Open project", filters: [{ name: "Slate project", extensions: [PROJECT_EXTENSION] }] }))
+  const path = known ?? (await open({ title: t("project.openTitle"), filters: [{ name: t("project.fileType"), extensions: [PROJECT_EXTENSION] }] }))
   if (!path) return
   whenSettled(async () => {
     try {
@@ -158,7 +159,7 @@ export async function openProject(known?: string) {
       remember(path, project.name)
     } catch (err) {
       if (known) forget(known)
-      notify(`Couldn't open ${baseName(path)}: ${errorText(err)}`, "error")
+      notify(t("project.openFailed", { name: baseName(path), detail: errorText(err) }), "error")
     }
   })
 }
@@ -175,13 +176,12 @@ async function offerRecovery() {
   } catch {
     return
   }
-  const when = new Date(autosave.savedAt).toLocaleString()
   confirmAction({
-    title: "Recover your work?",
-    body: `${project.name} didn't close cleanly. Slate kept a copy from ${when}.`,
-    action: "Recover",
+    title: t("recovery.title"),
+    body: t("recovery.body", { name: project.name, when: formatDate(autosave.savedAt) }),
+    action: t("recovery.recover"),
     tone: "primary",
-    cancelLabel: "Discard",
+    cancelLabel: t("recovery.discard"),
     onCancel: () => void dropAutosave(project.id),
     onConfirm: () => void adopt(project, autosave.path, true),
   })
@@ -216,9 +216,9 @@ function guardClose() {
     const close = () => whenSettled(() => void win.destroy())
     if (!running) return close()
     confirmAction({
-      title: "Stop exporting?",
-      body: `Closing Slate cancels ${running === 1 ? "the export" : `${running} exports`} still in progress.`,
-      action: "Stop and close",
+      title: t("close.title"),
+      body: t("close.body", { count: running }),
+      action: t("close.action"),
       onConfirm: close,
     })
   })

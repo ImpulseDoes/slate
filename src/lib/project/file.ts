@@ -1,4 +1,5 @@
 import type { Clip, MediaKind, ProjectSettings, Track } from "../../types"
+import { t, type Key } from "../i18n"
 import { TICKS } from "../time"
 
 export const PROJECT_EXTENSION = "slate"
@@ -62,29 +63,29 @@ export function toProjectFile(s: Source): ProjectFile {
   }
 }
 
-const damaged = (detail: string) => new Error(`This project file is damaged: ${detail}`)
+const damaged = (detail: Key) => new Error(t("file.damaged", { detail: t(detail) }))
 
 export function parseProject(text: string): ProjectFile {
   let file: Record<string, unknown>
   try {
     file = JSON.parse(text)
   } catch {
-    throw new Error("This isn't a Slate project file.")
+    throw new Error(t("file.notProject"))
   }
-  if (file?.format !== FORMAT || typeof file.version !== "number") throw new Error("This isn't a Slate project file.")
-  if (file.version > VERSION) throw new Error("This project was saved by a newer version of Slate.")
-  if (file.timebase !== TICKS) throw damaged("unknown timebase.")
+  if (file?.format !== FORMAT || typeof file.version !== "number") throw new Error(t("file.notProject"))
+  if (file.version > VERSION) throw new Error(t("file.newer"))
+  if (file.timebase !== TICKS) throw damaged("file.damaged.timebase")
   for (let v = file.version; v < VERSION; v++) file = { ...MIGRATIONS[v - 1](file), version: v + 1 }
 
   const project = file as unknown as ProjectFile
-  if (!Array.isArray(project.media) || !Array.isArray(project.tracks) || !Array.isArray(project.clips)) throw damaged("its lists are missing.")
-  if (!project.settings?.fps?.num || !project.settings.width || !project.settings.height) throw damaged("its settings are missing.")
+  if (!Array.isArray(project.media) || !Array.isArray(project.tracks) || !Array.isArray(project.clips)) throw damaged("file.damaged.lists")
+  if (!project.settings?.fps?.num || !project.settings.width || !project.settings.height) throw damaged("file.damaged.settings")
   const media = new Set(project.media.map((m) => m.id))
   const tracks = new Set(project.tracks.map((t) => t.id))
   for (const clip of project.clips) {
-    if (!tracks.has(clip.trackId)) throw damaged(`a clip sits on a track that doesn't exist.`)
-    if (clip.mediaId && !media.has(clip.mediaId)) throw damaged(`a clip uses media that doesn't exist.`)
-    if (![clip.start, clip.offset, clip.duration].every(Number.isFinite)) throw damaged("a clip has no position.")
+    if (!tracks.has(clip.trackId)) throw damaged("file.damaged.track")
+    if (clip.mediaId && !media.has(clip.mediaId)) throw damaged("file.damaged.media")
+    if (![clip.start, clip.offset, clip.duration].every(Number.isFinite)) throw damaged("file.damaged.position")
   }
   return project
 }

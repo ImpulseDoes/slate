@@ -1,14 +1,16 @@
 import type { ReactNode } from "react"
 import type { IconSvgElement } from "@hugeicons/react"
 import { Refresh01Icon } from "@hugeicons/core-free-icons"
+import { useT } from "../../lib/i18n"
 import { Button, Icon, NumberField, Scrub } from "../ui"
 
 export function ResetRow({ onReset, children }: { onReset: () => void; children?: ReactNode }) {
+  const t = useT()
   return (
     <div className="flex items-center justify-end gap-2">
       <div className="flex-1">{children}</div>
       <Button variant="quiet" icon={Refresh01Icon} onClick={onReset}>
-        Reset
+        {t("common.reset")}
       </Button>
     </div>
   )
