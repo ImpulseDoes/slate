@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { create } from "zustand"
 import { errorText } from "../lib/errors"
-import { uid } from "../lib/platform"
+import { isTauri, uid } from "../lib/platform"
 import type { RenderPlan } from "../lib/render/plan"
 
 export type RenderStatus = "queued" | "running" | "done" | "failed" | "cancelled"
@@ -89,7 +89,7 @@ export const useRenders = create<RendersState>((set, get) => ({
 let listening = false
 
 export function listenForRenderProgress() {
-  if (listening) return
+  if (listening || !isTauri) return
   listening = true
   void listen<{ id: string; step: number; frame: number }>("render-progress", ({ payload }) => {
     const job = useRenders.getState().jobs.find((j) => j.id === payload.id)

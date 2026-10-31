@@ -14,7 +14,7 @@ export function Inspector() {
   const media = useEditor((s) => s.media.find((m) => m.id === clip?.mediaId))
 
   return (
-    <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto rounded-xl bg-surface p-4 shadow-card">
+    <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto *:shrink-0 rounded-xl bg-surface p-4 shadow-card">
       {clip ? <ClipInspector clip={clip} media={media} /> : <ProjectInspector multi={count > 1 ? count : 0} />}
     </aside>
   )
