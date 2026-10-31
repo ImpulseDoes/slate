@@ -10,7 +10,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
           role="tab"
           aria-selected={o.id === value}
           onClick={() => onChange(o.id)}
-          className={`inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md text-body transition-colors ${o.id === value ? "bg-surface text-fg shadow-control ring-1 ring-border" : "text-label hover:text-fg"}`}
+          className={`inline-flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-md px-1.5 text-body transition-colors ${o.id === value ? "bg-surface text-fg shadow-control ring-1 ring-border" : "text-label hover:text-fg"}`}
         >
           <Icon icon={o.icon} />
           <span className="truncate">{o.label}</span>

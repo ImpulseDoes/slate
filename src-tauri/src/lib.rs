@@ -1,6 +1,7 @@
 mod audio;
 mod media;
 mod project;
+mod proxy_cache;
 mod render;
 
 use tauri::{Manager, RunEvent};
@@ -11,6 +12,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(render::Renders::default())
+        .setup(|app| {
+            let proxies = app.path().app_cache_dir()?.join("proxies");
+            std::thread::spawn(move || proxy_cache::trim(&proxies));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             audio::scan_audio,
             media::media_info,

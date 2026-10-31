@@ -11,6 +11,7 @@ use std::{
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::proxy_cache;
 use crate::render::{Renders, ffmpeg, start_failed};
 
 const MAX_TEXT_BYTES: u64 = 16 * 1024 * 1024;
@@ -127,7 +128,11 @@ fn proxy_target(app: &AppHandle, path: &Path, mode: &str, stream: Option<u32>) -
 #[tauri::command]
 pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Option<u32>) -> Result<Option<String>, String> {
     let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
-    Ok(target.is_file().then(|| target.to_string_lossy().into_owned()))
+    if !target.is_file() {
+        return Ok(None);
+    }
+    proxy_cache::touch(&target);
+    Ok(Some(target.to_string_lossy().into_owned()))
 }
 
 /// A copy the webview can play and seek quickly, kept in the cache. Export never reads it, it uses the original.
@@ -135,6 +140,7 @@ pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Op
 pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String, path: String, mode: String, audio_stream: Option<u32>, copy_audio: bool, duration: f64) -> Result<String, String> {
     let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
     if target.is_file() {
+        proxy_cache::touch(&target);
         return Ok(target.to_string_lossy().into_owned());
     }
     let dir = target.parent().ok_or("No cache folder.")?;
