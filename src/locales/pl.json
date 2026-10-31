@@ -329,6 +329,7 @@
   "record.failed": "Nie udało się zapisać nagrania: {detail}",
   "record.noMicrophone": "Brak dostępu do mikrofonu: {detail}",
   "media.converting": "Konwersja {percent}%",
+  "media.preview": "Podgląd {percent}%",
   "export.preset.tiktok": "TikTok",
   "export.preset.shorts": "YouTube Shorts",
   "export.preset.reels": "Instagram Reels",

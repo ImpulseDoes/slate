@@ -319,6 +319,7 @@
   "record.failed": "Couldn't save the recording: {detail}",
   "record.noMicrophone": "Couldn't reach the microphone: {detail}",
   "media.converting": "Converting {percent}%",
+  "media.preview": "Preview {percent}%",
   "export.preset.tiktok": "TikTok",
   "export.preset.shorts": "YouTube Shorts",
   "export.preset.reels": "Instagram Reels",

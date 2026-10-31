@@ -110,6 +110,7 @@ export function MediaRow({ item }: { item: MediaItem }) {
               {shortDuration(item.duration)}
             </span>
           )}
+          {ready && item.progress !== undefined && <span className="tnum text-small text-muted">{t("media.preview", { percent: Math.round(item.progress * 100) })}</span>}
         </div>
       </div>
       <button

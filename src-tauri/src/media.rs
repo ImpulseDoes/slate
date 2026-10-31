@@ -14,6 +14,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::render::{Renders, ffmpeg, start_failed};
 
 const MAX_TEXT_BYTES: u64 = 16 * 1024 * 1024;
+// Raising it makes every proxy again, for when their settings change.
+const PROXY_VERSION: u8 = 2;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,7 +70,7 @@ fn proxy_key(path: &Path, mode: &str, stream: Option<u32>) -> Result<String, Str
     let meta = fs::metadata(path).map_err(|e| e.to_string())?;
     let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs());
     let mut hasher = DefaultHasher::new();
-    (path, meta.len(), modified, mode, stream).hash(&mut hasher);
+    (PROXY_VERSION, path, meta.len(), modified, mode, stream).hash(&mut hasher);
     Ok(format!("{:016x}", hasher.finish()))
 }
 
@@ -81,7 +83,7 @@ fn proxy_args(source: &str, mode: &str, stream: Option<u32>, copy_audio: bool, t
     } else {
         args.extend(["-map", "0:v:0", "-map", "0:a:0?"].map(String::from));
         if mode == "transcode" {
-            args.extend(["-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26", "-pix_fmt", "yuv420p"].map(String::from));
+            args.extend(["-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-g", "30", "-crf", "26", "-pix_fmt", "yuv420p"].map(String::from));
         } else {
             args.extend(["-c:v", "copy"].map(String::from));
         }
@@ -116,17 +118,29 @@ fn make_proxy(app: &AppHandle, renders: &Renders, id: &str, key: &str, args: Vec
     result
 }
 
-/// A copy the webview can play, kept in the cache. Export never reads it, it uses the original.
+fn proxy_target(app: &AppHandle, path: &Path, mode: &str, stream: Option<u32>) -> Result<PathBuf, String> {
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("proxies");
+    let extension = if stream.is_some() { "m4a" } else { "mp4" };
+    Ok(dir.join(format!("{}.{extension}", proxy_key(path, mode, stream)?)))
+}
+
+#[tauri::command]
+pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Option<u32>) -> Result<Option<String>, String> {
+    let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
+    Ok(target.is_file().then(|| target.to_string_lossy().into_owned()))
+}
+
+/// A copy the webview can play and seek quickly, kept in the cache. Export never reads it, it uses the original.
 #[tauri::command]
 pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String, path: String, mode: String, audio_stream: Option<u32>, copy_audio: bool, duration: f64) -> Result<String, String> {
-    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("proxies");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let key = proxy_key(Path::new(&path), &mode, audio_stream)?;
-    let extension = if audio_stream.is_some() { "m4a" } else { "mp4" };
-    let target = dir.join(format!("{key}.{extension}"));
+    let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
     if target.is_file() {
         return Ok(target.to_string_lossy().into_owned());
     }
+    let dir = target.parent().ok_or("No cache folder.")?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let key = proxy_key(Path::new(&path), &mode, audio_stream)?;
+    let extension = target.extension().unwrap_or_default().to_string_lossy();
     let partial = dir.join(format!("{key}.part.{extension}"));
     let args = proxy_args(&path, &mode, audio_stream, copy_audio, &partial);
     let renders = (*renders).clone();
@@ -141,6 +155,10 @@ pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String
     })
     .await
     .map_err(|e| e.to_string())??;
+    // A remux is as big as the recording, and the quick copy has just replaced it.
+    if mode == "transcode" {
+        let _ = proxy_target(&app, Path::new(&path), "remux", None).map(fs::remove_file);
+    }
     Ok(target.to_string_lossy().into_owned())
 }
 

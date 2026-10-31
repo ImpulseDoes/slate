@@ -15,6 +15,7 @@ pub fn run() {
             audio::scan_audio,
             media::media_info,
             media::media_proxy,
+            media::media_cached,
             media::media_loudness,
             media::recording_save,
             media::file_bytes,

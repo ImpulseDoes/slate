@@ -101,7 +101,7 @@ export async function relinkMissing(item: MediaItem) {
 }
 
 function relink(item: MediaItem, path: string) {
-  const patch = { name: baseName(path), path, src: convertFileSrc(path), proxy: undefined, status: "loading" as const, error: undefined }
+  const patch = { name: baseName(path), path, src: convertFileSrc(path), proxy: undefined, duration: 0, width: 0, height: 0, status: "loading" as const, error: undefined }
   useEditor.getState().relinkMedia(item.id, patch)
   void probe({ ...item, ...patch })
 }

@@ -10,6 +10,7 @@ import { useEditor } from "../../store/editor"
 import { openMenu } from "../../store/overlays"
 import type { Clip } from "../../types"
 import { Layer } from "./Layer"
+import { assignPlayers } from "./players"
 import { SyncedMedia } from "./SyncedMedia"
 
 const PRELOAD = ticks(1.5)
@@ -26,6 +27,7 @@ export function Stage() {
   const settings = useEditor((s) => s.settings)
   const frame = useRef<HTMLDivElement>(null)
   const [centered, setCentered] = useState({ x: false, y: false })
+  const players = useRef(new Map<string, string>())
 
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const tails = useMemo(() => dissolveTails(clips), [clips])
@@ -58,6 +60,7 @@ export function Stage() {
   const tailOf = (c: Clip) => tails.get(c.id) ?? 0
   const near = (c: Clip) => c.start - PRELOAD <= playhead && clipEnd(c) + tailOf(c) > playhead
   const active = (c: Clip) => c.start <= playhead && clipEnd(c) + tailOf(c) > playhead
+  players.current = assignPlayers(players.current, byStart.filter(near))
   const videoTracks = tracks.filter((t) => t.kind === "video").reverse()
   const audioTracks = tracks.filter((t) => t.kind === "audio")
 
@@ -68,7 +71,7 @@ export function Stage() {
           byStart
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => (
-              <Layer key={c.id} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} time={playhead} tail={tailOf(c)} settings={settings} onMove={beginMove} />
+              <Layer key={players.current.get(c.id)} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} time={playhead} tail={tailOf(c)} settings={settings} onMove={beginMove} />
             )),
         )}
         {audioTracks.map((t) =>
@@ -76,7 +79,7 @@ export function Stage() {
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => {
               const m = c.mediaId ? mediaById.get(c.mediaId) : undefined
-              return m ? <SyncedMedia key={c.id} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} /> : null
+              return m ? <SyncedMedia key={players.current.get(c.id)} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} /> : null
             }),
         )}
         {clips.length === 0 && (

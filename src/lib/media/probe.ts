@@ -56,9 +56,21 @@ function addCompanions(item: MediaItem, info: MediaInfo) {
   for (const m of extra) void probe(m)
 }
 
+let previews = Promise.resolve()
+
+/** One at a time and behind everything else. Until it's done the viewer plays the recording itself. */
+function queuePreview(item: MediaItem, info: MediaInfo) {
+
+  previews = previews
+    .then(async () => {
+      if (useEditor.getState().media.some((m) => m.id === item.id)) await convert(item, "transcode", info)
+    })
+    .catch(() => update(item.id, { progress: undefined }))
+}
+
 async function prepare(item: MediaItem): Promise<{ item: MediaItem; info: MediaInfo | null }> {
 
-  if (!isTauri) return { item, info: null }
+  if (!isTauri || item.kind === "image") return { item, info: null }
 
   const info = await invoke<MediaInfo>("media_info", { path: item.path }).catch(() => null)
 
@@ -68,9 +80,23 @@ async function prepare(item: MediaItem): Promise<{ item: MediaItem; info: MediaI
 
   addCompanions(item, info)
 
-  const mode = proxyMode(item.path, info)
+  const cached = await invoke<string | null>("media_cached", { path: item.path, mode: "transcode", audioStream: null }).catch(() => null)
 
-  return { item: mode === "none" ? item : await convert(item, mode, info), info }
+  if (cached) return { item: playFrom(item, cached), info }
+
+  const mode = proxyMode(item.path, info)
+  const original = playFrom(item, undefined)
+
+  return { item: mode === "none" ? original : await convert(original, mode, info), info }
+}
+
+function playFrom(item: MediaItem, proxy: string | undefined) {
+
+  const patch = { proxy, src: convertFileSrc(proxy ?? item.path) }
+
+  update(item.id, patch)
+
+  return { ...item, ...patch }
 }
 
 export async function probe(original: MediaItem): Promise<void> {
@@ -80,7 +106,13 @@ export async function probe(original: MediaItem): Promise<void> {
     return { item: null, info: null }
   })
 
-  if (item) await inspect(item, info)
+  if (!item) return
+
+  await inspect(item, info)
+
+  const ready = useEditor.getState().media.find((m) => m.id === item.id)?.status === "ready"
+
+  if (info && item.kind === "video" && ready) queuePreview(item, info)
 }
 
 /** Reads the file the way the viewer will. `info` is there when a failure can still fall back to a conversion. */
@@ -117,11 +149,12 @@ async function inspect(item: MediaItem, info: MediaInfo | null): Promise<void> {
 
       if (!v.videoWidth) throw new Error(t("probe.noVideo"))
 
-      update_({ status: "ready", duration, width: v.videoWidth, height: v.videoHeight })
+      // Reopening a project reads the smaller copy, and the project goes by the recording itself.
+      update_({ status: "ready", duration: item.duration || duration, width: item.width || v.videoWidth, height: item.height || v.videoHeight })
       update_({ frames: await captureFrames(v, seconds) })
       update_(await scanAudio(item))
     } else {
-      update_({ status: "ready", duration })
+      update_({ status: "ready", duration: item.duration || duration })
       update_(await scanAudio(item))
     }
     el.removeAttribute("src")
