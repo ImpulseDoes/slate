@@ -3,6 +3,8 @@ export interface MediaInfo {
   pixelFormat: string | null
   audioCodecs: string[]
   duration: number
+  width: number
+  height: number
 }
 
 /** Remux keeps the picture as it is, transcode makes a small H.264 copy, audio pulls out one sound track. */

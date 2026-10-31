@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{Command, Stdio},
     time::UNIX_EPOCH,
 };
 
@@ -25,13 +25,15 @@ pub struct MediaInfo {
     pixel_format: Option<String>,
     audio_codecs: Vec<String>,
     duration: f64,
+    width: u32,
+    height: u32,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProxyProgress<'a> {
-    id: &'a str,
-    progress: f64,
+pub struct Progress<'a> {
+    pub id: &'a str,
+    pub progress: f64,
 }
 
 fn parse_duration(text: &str) -> f64 {
@@ -42,12 +44,24 @@ fn parse_duration(text: &str) -> f64 {
     clock.split(':').fold(0.0, |total, part| total * 60.0 + part.trim().parse::<f64>().unwrap_or(0.0))
 }
 
+/// The first word of a comma-separated part that reads like 1920x1080.
+fn parse_size(stream: &str) -> Option<(u32, u32)> {
+    stream.split(',').find_map(|part| {
+        let (width, height) = part.split_whitespace().next()?.split_once('x')?;
+        let size = (width.parse().ok()?, height.parse().ok()?);
+        (size.0 > 0 && size.1 > 0).then_some(size)
+    })
+}
+
 fn parse_info(text: &str) -> MediaInfo {
     let streams = || text.lines().filter(|line| line.trim_start().starts_with("Stream #"));
     let after = |line: &str, label: &str| line.split(label).nth(1).map(str::trim).map(String::from);
     let codec = |rest: String| rest.split([' ', ',']).next().unwrap_or_default().to_string();
     let video = streams().find_map(|line| after(line, "Video: "));
+    let (width, height) = video.as_deref().and_then(parse_size).unwrap_or_default();
     MediaInfo {
+        width,
+        height,
         video_codec: video.clone().map(codec),
         pixel_format: video.and_then(|rest| Some(rest.split(',').nth(1)?.trim().split('(').next()?.to_string())),
         audio_codecs: streams().filter_map(|line| after(line, "Audio: ")).map(codec).collect(),
@@ -99,10 +113,11 @@ fn proxy_args(source: &str, mode: &str, stream: Option<u32>, copy_audio: bool, t
     args
 }
 
-fn make_proxy(app: &AppHandle, renders: &Renders, id: &str, key: &str, args: Vec<String>, duration: f64) -> Result<(), String> {
+/// Runs FFmpeg to the end, stoppable under `key`. Its `-progress` output becomes `event`.
+pub fn run_ffmpeg(app: &AppHandle, renders: &Renders, event: &str, id: &str, key: &str, command: &mut Command, duration: f64) -> Result<(), String> {
     let control = renders.track(key)?;
     let result = (|| {
-        let mut child = ffmpeg().args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(start_failed)?;
+        let mut child = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(start_failed)?;
         let stdout = child.stdout.take().ok_or("FFmpeg has no output pipe.")?;
         let stderr = child.stderr.take().ok_or("FFmpeg has no error pipe.")?;
         control.hold(child)?;
@@ -110,7 +125,7 @@ fn make_proxy(app: &AppHandle, renders: &Renders, id: &str, key: &str, args: Vec
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let done = line.strip_prefix("out_time_us=").and_then(|n| n.trim().parse::<f64>().ok());
             if let (Some(done), true) = (done, duration > 0.0) {
-                let _ = app.emit("proxy-progress", ProxyProgress { id, progress: (done / 1_000_000.0 / duration).clamp(0.0, 1.0) });
+                let _ = app.emit(event, Progress { id, progress: (done / 1_000_000.0 / duration).clamp(0.0, 1.0) });
             }
         }
         control.finish(errors.join().unwrap_or_default())
@@ -153,7 +168,7 @@ pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String
     let handle = app.clone();
     let (made, partial_for_task) = (target.clone(), partial.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        let result = make_proxy(&handle, &renders, &id, &key, args, duration).and_then(|_| fs::rename(&partial_for_task, &made).map_err(|e| e.to_string()));
+        let result = run_ffmpeg(&handle, &renders, "proxy-progress", &id, &key, ffmpeg().args(&args), duration).and_then(|_| fs::rename(&partial_for_task, &made).map_err(|e| e.to_string()));
         if result.is_err() {
             let _ = fs::remove_file(&partial_for_task);
         }
@@ -238,5 +253,6 @@ mod tests {
         assert_eq!(info.pixel_format.as_deref(), Some("yuv420p"));
         assert_eq!(info.audio_codecs, ["aac", "opus"]);
         assert!((info.duration - 3723.5).abs() < 0.01);
+        assert_eq!((info.width, info.height), (1920, 1080));
     }
 }

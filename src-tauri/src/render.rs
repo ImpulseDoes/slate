@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    ffi::OsStr,
     fs,
     io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
@@ -115,7 +116,12 @@ struct Progress<'a> {
 pub fn ffmpeg() -> Command {
     let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
     let sidecar = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(name))).filter(|path| path.is_file());
-    let mut command = Command::new(sidecar.unwrap_or_else(|| PathBuf::from(name)));
+    hidden(sidecar.unwrap_or_else(|| PathBuf::from(name)))
+}
+
+/// A helper program with no console window, in the background behind the editor.
+pub fn hidden(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

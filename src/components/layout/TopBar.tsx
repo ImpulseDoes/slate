@@ -5,6 +5,7 @@ import { t, useT } from "../../lib/i18n"
 import { isMac, isTauri, MOD } from "../../lib/platform"
 import { openProject, recentProjects, saveProject, saveProjectAs, startNewProject } from "../../lib/project/session"
 import { importCaptions } from "../../lib/text/captions"
+import { recordingsToTranscribe } from "../../lib/text/transcribe"
 import { useEditor } from "../../store/editor"
 import { openDialog, openMenuBelow, type MenuEntry } from "../../store/overlays"
 import { runningRenders, useRenders } from "../../store/renders"
@@ -30,8 +31,10 @@ function fileMenu(e: React.MouseEvent) {
 }
 
 function toolsMenu(e: React.MouseEvent) {
-  const sound = canUseSoundTools(useEditor.getState())
+  const state = useEditor.getState()
+  const sound = canUseSoundTools(state)
   openMenuBelow(e, [
+    { label: t("tools.autoCaptions"), icon: SubtitleIcon, disabled: !isTauri || !recordingsToTranscribe(state).length, onSelect: () => openDialog("autoCaptions") },
     { label: t("tools.captions"), icon: SubtitleIcon, disabled: !isTauri, onSelect: () => void importCaptions() },
     "divider",
     { label: t("record.start"), icon: Mic01Icon, kbd: "R", disabled: !isTauri, onSelect: toggleRecording },

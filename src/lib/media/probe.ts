@@ -116,7 +116,7 @@ export async function probe(original: MediaItem): Promise<void> {
 }
 
 /** Reads the file the way the viewer will. `info` is there when a failure can still fall back to a conversion. */
-async function inspect(item: MediaItem, info: MediaInfo | null): Promise<void> {
+async function inspect(item: MediaItem, info: MediaInfo | null, canRetry = true): Promise<void> {
 
   const update_ = (patch: Partial<MediaItem>) => update(item.id, patch)
 
@@ -149,8 +149,7 @@ async function inspect(item: MediaItem, info: MediaInfo | null): Promise<void> {
 
       if (!v.videoWidth) throw new Error(t("probe.noVideo"))
 
-      // Reopening a project reads the smaller copy, and the project goes by the recording itself.
-      update_({ status: "ready", duration: item.duration || duration, width: item.width || v.videoWidth, height: item.height || v.videoHeight })
+      update_({ status: "ready", duration: item.duration || duration, ...recordingSize(item, info, v) })
       update_({ frames: await captureFrames(v, seconds) })
       update_(await scanAudio(item))
     } else {
@@ -162,13 +161,28 @@ async function inspect(item: MediaItem, info: MediaInfo | null): Promise<void> {
   } catch (err) {
 
     // A recording the webview still can't play gets a real conversion, which it always can.
-    if (info && item.kind === "video" && proxyMode(item.path, info) !== "transcode") {
+    if (canRetry && info && item.kind === "video" && proxyMode(item.path, info) !== "transcode") {
       const converted = await convert(item, "transcode", info).catch(() => null)
-      if (converted) return inspect(converted, null)
+      if (converted) return inspect(converted, info, false)
     }
 
     update_({ status: "error", error: err instanceof Error ? err.message : t("probe.unreadable") })
   }
+}
+
+/**
+ * The element may be playing the smaller copy, and the project and export go by the recording itself.
+ * FFmpeg lists a phone clip's size before rotating it, the element after, so the element decides which way up.
+ */
+function recordingSize(item: MediaItem, info: MediaInfo | null, v: HTMLVideoElement) {
+
+  if (info?.width && info.height) {
+
+    const upright = info.height > info.width === v.videoHeight > v.videoWidth
+
+    return upright ? { width: info.width, height: info.height } : { width: info.height, height: info.width }
+  }
+  return { width: item.width || v.videoWidth, height: item.height || v.videoHeight }
 }
 
 function once(el: HTMLMediaElement, event: string, timeoutMs = 15000) {

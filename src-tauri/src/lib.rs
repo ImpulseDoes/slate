@@ -1,4 +1,5 @@
 mod audio;
+mod captions;
 mod media;
 mod project;
 mod proxy_cache;
@@ -19,6 +20,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             audio::scan_audio,
+            captions::model_ready,
+            captions::model_download,
+            captions::media_transcribe,
             media::media_info,
             media::media_proxy,
             media::media_cached,

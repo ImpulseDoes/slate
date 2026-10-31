@@ -16,7 +16,7 @@ const SPEECH_THRESHOLD = 0.08
 export const DEFAULT_SILENCE: SilenceOptions = { threshold: 0.06, minimum: ticks(0.6), padding: ticks(0.12) }
 const DUCK = { level: 0.25, fade: ticks(0.35) }
 
-const hasSound = (clip: Clip, media?: MediaItem) => !clip.audioDetached && clip.type !== "text" && !!media && media.kind !== "image" && media.hasAudio !== false
+export const hasSound = (clip: Clip, media?: MediaItem) => !clip.audioDetached && clip.type !== "text" && !!media && media.kind !== "image" && media.hasAudio !== false
 
 function withPeaks(s: Pick<EditorState, "media">, clips: Clip[]) {
   return clips.flatMap((clip) => {

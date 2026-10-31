@@ -5,6 +5,7 @@ import { LanguageDialog } from "./components/dialogs/LanguageDialog"
 import { MarkerDialog } from "./components/dialogs/MarkerDialog"
 import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
 import { RendersDialog } from "./components/dialogs/RendersDialog"
+import { AutoCaptionsDialog } from "./components/dialogs/AutoCaptionsDialog"
 import { SilenceDialog } from "./components/dialogs/SilenceDialog"
 import { VerticalDialog } from "./components/dialogs/VerticalDialog"
 import { Inspector } from "./components/inspector/Inspector"
@@ -75,6 +76,7 @@ export default function App() {
       {dialog === "language" && <LanguageDialog onClose={closeDialog} />}
       {dialog === "marker" && <MarkerDialog onClose={closeDialog} />}
       {dialog === "silence" && <SilenceDialog onClose={closeDialog} />}
+      {dialog === "autoCaptions" && <AutoCaptionsDialog onClose={closeDialog} />}
       {dialog === "vertical" && <VerticalDialog onClose={closeDialog} />}
       <Overlays />
     </div>

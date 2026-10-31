@@ -30,7 +30,7 @@ export interface ConfirmState {
   alternate?: { label: string; onSelect: () => void }
 }
 
-export type DialogName = "export" | "settings" | "renders" | "language" | "marker" | "silence" | "vertical"
+export type DialogName = "export" | "settings" | "renders" | "language" | "marker" | "silence" | "vertical" | "autoCaptions"
 
 export interface Notice {
   id: number
