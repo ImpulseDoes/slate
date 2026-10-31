@@ -13,7 +13,7 @@ interface Bus {
 }
 
 let bus: Bus | null = null
-const routed = new WeakSet<HTMLMediaElement>()
+const gains = new WeakMap<HTMLMediaElement, GainNode>()
 
 function getBus(): Bus {
 
@@ -46,15 +46,30 @@ function getBus(): Bus {
 /** Sends an element's sound through the bus. The element must load with crossOrigin set, or it plays silence. */
 export function routeToBus(el: HTMLMediaElement) {
 
-  if (routed.has(el)) return
+  if (gains.has(el)) return
 
   try {
 
     const { ctx, input } = getBus()
+    const gain = ctx.createGain()
 
-    ctx.createMediaElementSource(el).connect(input)
-    routed.add(el)
+    ctx.createMediaElementSource(el).connect(gain).connect(input)
+    gains.set(el, gain)
   } catch { } // Without Web Audio the element still plays straight to the speakers; only the meter stays dark.
+}
+
+/** An element's own volume stops at 100%, so anything routed is turned up in the bus instead. */
+export function setGain(el: HTMLMediaElement, value: number) {
+
+  const gain = gains.get(el)
+
+  if (!gain) {
+    el.volume = Math.min(1, Math.max(0, value))
+    return
+  }
+
+  el.volume = 1
+  gain.gain.value = Math.max(0, value)
 }
 
 /** A context made before any click starts suspended, and anything routed into it is silent until it resumes. */

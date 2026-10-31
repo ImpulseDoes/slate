@@ -1,18 +1,92 @@
-import { invoke } from "@tauri-apps/api/core"
+import { convertFileSrc, invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
 import { useEditor } from "../../store/editor"
 import { PEAKS_PER_SECOND, type MediaItem } from "../../types"
 import { t } from "../i18n"
-import { isTauri } from "../platform"
+import { errorText } from "../errors"
+import { isTauri, uid } from "../platform"
 import { ticks } from "../time"
+import { proxyMode, type MediaInfo, type ProxyMode } from "./proxy"
 
 const STILL_DURATION = ticks(5)
 const FILMSTRIP_FRAMES = 12
 const FRAME_HEIGHT = 54
 const MAX_WAVEFORM_BYTES = 300 * 1024 * 1024
 
-export async function probe(item: MediaItem) {
+const update = (id: string, patch: Partial<MediaItem>) => useEditor.getState().updateMedia(id, patch)
 
-  const update = (patch: Partial<MediaItem>) => useEditor.getState().updateMedia(item.id, patch)
+/** Runs one conversion, showing its progress on the media row. */
+async function convert(item: MediaItem, mode: ProxyMode, info: MediaInfo): Promise<MediaItem> {
+
+  const stop = await listen<{ id: string; progress: number }>("proxy-progress", ({ payload }) => {
+    if (payload.id === item.id) update(item.id, { progress: payload.progress })
+  })
+
+  try {
+
+    const proxy = await invoke<string>("media_proxy", {
+      id: item.id,
+      path: item.path,
+      mode,
+      audioStream: item.audioStream ?? null,
+      copyAudio: info.audioCodecs[0] === "aac",
+      duration: info.duration,
+    })
+    const patch = { proxy, src: convertFileSrc(proxy), progress: undefined }
+
+    update(item.id, patch)
+
+    return { ...item, ...patch }
+
+  } finally {
+    stop()
+  }
+}
+
+/** Adds the extra audio tracks of a recording as media of their own, once. */
+function addCompanions(item: MediaItem, info: MediaInfo) {
+
+  if (item.companions || info.audioCodecs.length < 2) return
+
+  const extra = info.audioCodecs.slice(1).map((_, i): MediaItem => ({ id: uid(), name: `${item.name} · A${i + 2}`, path: item.path, src: "", kind: "audio", duration: 0, width: 0, height: 0, frames: [], audioStream: i + 1, status: "loading" }))
+
+  useEditor.getState().addMedia(extra)
+  update(item.id, { companions: extra.map((m) => m.id) })
+
+  for (const m of extra) void probe(m)
+}
+
+async function prepare(item: MediaItem): Promise<{ item: MediaItem; info: MediaInfo | null }> {
+
+  if (!isTauri) return { item, info: null }
+
+  const info = await invoke<MediaInfo>("media_info", { path: item.path }).catch(() => null)
+
+  if (!info) return { item, info }
+
+  if (item.kind === "audio") return { item: item.audioStream === undefined ? item : await convert(item, "audio", info), info }
+
+  addCompanions(item, info)
+
+  const mode = proxyMode(item.path, info)
+
+  return { item: mode === "none" ? item : await convert(item, mode, info), info }
+}
+
+export async function probe(original: MediaItem): Promise<void> {
+
+  const { item, info } = await prepare(original).catch((err) => {
+    update(original.id, { status: "error", error: errorText(err), progress: undefined })
+    return { item: null, info: null }
+  })
+
+  if (item) await inspect(item, info)
+}
+
+/** Reads the file the way the viewer will. `info` is there when a failure can still fall back to a conversion. */
+async function inspect(item: MediaItem, info: MediaInfo | null): Promise<void> {
+
+  const update_ = (patch: Partial<MediaItem>) => update(item.id, patch)
 
   try {
 
@@ -20,7 +94,7 @@ export async function probe(item: MediaItem) {
 
       const img = await loadImage(item.src)
 
-      update({ status: "ready", width: img.naturalWidth, height: img.naturalHeight, duration: STILL_DURATION, frames: [item.src] })
+      update_({ status: "ready", width: img.naturalWidth, height: img.naturalHeight, duration: STILL_DURATION, frames: [item.src] })
 
       return
     }
@@ -43,17 +117,24 @@ export async function probe(item: MediaItem) {
 
       if (!v.videoWidth) throw new Error(t("probe.noVideo"))
 
-      update({ status: "ready", duration, width: v.videoWidth, height: v.videoHeight })
-      update({ frames: await captureFrames(v, seconds) })
-      update(await scanAudio(item))
+      update_({ status: "ready", duration, width: v.videoWidth, height: v.videoHeight })
+      update_({ frames: await captureFrames(v, seconds) })
+      update_(await scanAudio(item))
     } else {
-      update({ status: "ready", duration })
-      update(await scanAudio(item))
+      update_({ status: "ready", duration })
+      update_(await scanAudio(item))
     }
     el.removeAttribute("src")
     el.load()
   } catch (err) {
-    update({ status: "error", error: err instanceof Error ? err.message : t("probe.unreadable") })
+
+    // A recording the webview still can't play gets a real conversion, which it always can.
+    if (info && item.kind === "video" && proxyMode(item.path, info) !== "transcode") {
+      const converted = await convert(item, "transcode", info).catch(() => null)
+      if (converted) return inspect(converted, null)
+    }
+
+    update_({ status: "error", error: err instanceof Error ? err.message : t("probe.unreadable") })
   }
 }
 
@@ -125,7 +206,7 @@ async function scanAudio(item: MediaItem): Promise<Pick<MediaItem, "peaks" | "ha
 
   if (isTauri) {
 
-    const scan = await invoke<{ hasAudio: boolean; peaks: number[] }>("scan_audio", { path: item.path }).catch(() => null)
+    const scan = await invoke<{ hasAudio: boolean; peaks: number[] }>("scan_audio", { path: item.proxy ?? item.path }).catch(() => null)
 
     if (scan?.peaks.length) return { peaks: scan.peaks, hasAudio: true }
     if (scan && !scan.hasAudio) return { hasAudio: false }

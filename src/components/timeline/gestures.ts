@@ -1,4 +1,4 @@
-import { clipEnd, linkedWith, lockedTrackIds, maxDurationFor, trackKindFor } from "../../lib/clips"
+import { clipEnd, linkedWith, lockedTrackIds, maxDurationFor, speedOf, trackKindFor } from "../../lib/clips"
 import { trackPointer } from "../../lib/pointer"
 import { frameTicks, TICKS, toFrame } from "../../lib/time"
 import { useEditor, type ClipEdit } from "../../store/editor"
@@ -43,7 +43,7 @@ export function beginClipDrag(e: React.PointerEvent, clip: Clip, mode: DragMode,
   // A trim takes along only the clips whose edge lines up with the one being dragged.
   const edge = mode === "trim-l" ? (c: Clip) => c.start : clipEnd
   const trimmed = group.filter((c) => Math.abs(edge(c) - edge(clip)) < frame / 2)
-  const earliestStart = Math.max(0, ...trimmed.map((c) => (maxDurationFor(c, media, fps) === Infinity ? 0 : c.start - c.offset)))
+  const earliestStart = Math.max(0, ...trimmed.map((c) => (maxDurationFor(c, media, fps) === Infinity ? 0 : c.start - c.offset / speedOf(c))))
   const latestStart = Math.min(...trimmed.map((c) => clipEnd(c) - frame))
   const earliestEnd = Math.max(...trimmed.map((c) => c.start + frame))
   const latestEnd = Math.min(...trimmed.map((c) => c.start + maxDurationFor(c, media, fps)))
@@ -53,7 +53,7 @@ export function beginClipDrag(e: React.PointerEvent, clip: Clip, mode: DragMode,
   const startX = e.clientX
   const scale = state.pxPerSec / TICKS
   const snapPoints = state.snapping
-    ? [0, state.playhead, ...all.filter((c) => !group.includes(c)).flatMap((c) => [c.start, clipEnd(c)])]
+    ? [0, state.playhead, ...state.markers.map((m) => m.at), ...all.filter((c) => !group.includes(c)).flatMap((c) => [c.start, clipEnd(c)])]
     : []
   const snap = (t: number) => {
     let best = t
@@ -91,7 +91,7 @@ export function beginClipDrag(e: React.PointerEvent, clip: Clip, mode: DragMode,
       current = group.map((c) => ({ ...toEdit(c), start: toFrame(c.start + shift, fps), trackId: c.id === clip.id ? trackId : c.trackId }))
     } else if (mode === "trim-l") {
       const shift = toFrame(Math.min(latestStart, Math.max(earliestStart, snap(clip.start + dt))), fps) - clip.start
-      current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.max(0, c.offset + shift), duration: c.duration - shift }))
+      current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.max(0, Math.round(c.offset + shift * speedOf(c))), duration: c.duration - shift }))
     } else {
       const change = toFrame(Math.min(latestEnd, Math.max(earliestEnd, snap(clipEnd(clip) + dt))), fps) - clipEnd(clip)
       current = trimmed.map((c) => ({ ...toEdit(c), duration: c.duration + change }))

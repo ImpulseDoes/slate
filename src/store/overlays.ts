@@ -30,7 +30,7 @@ export interface ConfirmState {
   alternate?: { label: string; onSelect: () => void }
 }
 
-export type DialogName = "export" | "settings" | "renders" | "language"
+export type DialogName = "export" | "settings" | "renders" | "language" | "marker" | "silence" | "vertical"
 
 export interface Notice {
   id: number
@@ -38,12 +38,14 @@ export interface Notice {
   tone: "info" | "error"
 }
 
-export const useOverlays = create<{ menu: MenuState | null; confirm: ConfirmState | null; dialog: DialogName | null; notices: Notice[] }>(() => ({ menu: null, confirm: null, dialog: null, notices: [] }))
+export const useOverlays = create<{ menu: MenuState | null; confirm: ConfirmState | null; dialog: DialogName | null; markerId: string | null; notices: Notice[] }>(() => ({ menu: null, confirm: null, dialog: null, markerId: null, notices: [] }))
 
 const NOTICE_MS = 7000
 let noticeId = 0
 
 export const openDialog = (dialog: DialogName | null) => useOverlays.setState({ dialog })
+
+export const editMarker = (markerId: string) => useOverlays.setState({ dialog: "marker", markerId })
 
 export function notify(text: string, tone: Notice["tone"] = "info") {
   const id = ++noticeId

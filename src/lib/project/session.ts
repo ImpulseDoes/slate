@@ -12,6 +12,7 @@ import { relinkMissing, unresolvedMedia } from "../media/importer"
 import { probe } from "../media/probe"
 import { baseName, dirName, joinPath, stem } from "../paths"
 import { isTauri } from "../platform"
+import { loadFont } from "../text/fonts"
 import { parseProject, PROJECT_EXTENSION, toProjectFile, type ProjectFile } from "./file"
 
 const AUTOSAVE_EVERY_MS = 15_000
@@ -105,7 +106,7 @@ export function startNewProject() {
 }
 
 function toMediaItem(ref: ProjectFile["media"][number], exists: boolean): MediaItem {
-  return { ...ref, src: convertFileSrc(ref.path), frames: [], status: exists ? "loading" : "missing" }
+  return { ...ref, src: convertFileSrc(ref.proxy ?? ref.path), frames: [], status: exists ? "loading" : "missing" }
 }
 
 async function resolveMedia(project: ProjectFile, path: string | null): Promise<MediaItem[]> {
@@ -126,6 +127,8 @@ async function adopt(project: ProjectFile, path: string | null, dirty: boolean) 
       media,
       tracks: project.tracks,
       clips: project.clips,
+      markers: project.markers,
+      fonts: project.fonts,
       playhead: project.view.playhead,
       pxPerSec: project.view.pxPerSec,
       snapping: project.view.snapping,
@@ -133,6 +136,7 @@ async function adopt(project: ProjectFile, path: string | null, dirty: boolean) 
     dirty,
   )
   media.filter((m) => m.status === "loading").forEach((m) => void probe(m))
+  project.fonts.forEach((font) => void loadFont(font))
   promptMissing()
 }
 

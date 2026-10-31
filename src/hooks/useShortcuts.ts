@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { toggleRecording } from "../lib/audio/recorder"
 import { projectDuration } from "../lib/clips"
 import { pickAndImport } from "../lib/media/importer"
 import { isTauri } from "../lib/platform"
@@ -73,7 +74,14 @@ export function useShortcuts() {
           break
         case "Delete":
         case "Backspace":
-          s.deleteSelected()
+          if (e.shiftKey) s.rippleDelete()
+          else s.deleteSelected()
+          break
+        case "[":
+          s.jumpToMarker(-1)
+          break
+        case "]":
+          s.jumpToMarker(1)
           break
         case "Escape":
           s.clearSelection()
@@ -88,7 +96,9 @@ export function useShortcuts() {
         default:
           if (key === "s") s.splitAtPlayhead()
           else if (key === "a") s.detachAudio()
+          else if (key === "m" && e.shiftKey) s.addMarker()
           else if (key === "m") s.mergeSelected()
+          else if (key === "r") toggleRecording()
           else if (key === "g") s.toggleGuides()
           else if (key === "t") s.addTitle()
           else if (key === "n") s.toggleSnapping()

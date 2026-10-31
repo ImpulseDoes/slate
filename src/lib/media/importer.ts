@@ -9,7 +9,7 @@ import { isTauri, uid } from "../platform"
 import { probe } from "./probe"
 
 const EXTENSIONS: Record<MediaKind, string[]> = {
-  video: ["mp4", "mov", "m4v", "webm", "mkv", "avi"],
+  video: ["mp4", "mov", "m4v", "webm", "mkv", "avi", "flv", "ts", "mts", "m2ts"],
   audio: ["mp3", "wav", "m4a", "aac", "ogg", "flac", "opus"],
   image: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
 }
@@ -41,6 +41,17 @@ export async function pickAndImport() {
   input.accept = ALL_EXTENSIONS.map((e) => `.${e}`).join(",")
   input.onchange = () => input.files && importFiles([...input.files])
   input.click()
+}
+
+/** Imports one file and resolves with its id once it's ready to go on the timeline. */
+export async function importAndWait(path: string) {
+
+  const item: MediaItem = { id: uid(), name: baseName(path), path, src: convertFileSrc(path), kind: kindOf(path) ?? "audio", duration: 0, width: 0, height: 0, frames: [], status: "loading" }
+
+  useEditor.getState().addMedia([item])
+  await probe(item)
+
+  return useEditor.getState().media.find((m) => m.id === item.id)?.status === "ready" ? item.id : null
 }
 
 export function importPaths(paths: string[]) {
@@ -90,7 +101,7 @@ export async function relinkMissing(item: MediaItem) {
 }
 
 function relink(item: MediaItem, path: string) {
-  const patch = { name: baseName(path), path, src: convertFileSrc(path), status: "loading" as const, error: undefined }
+  const patch = { name: baseName(path), path, src: convertFileSrc(path), proxy: undefined, status: "loading" as const, error: undefined }
   useEditor.getState().relinkMedia(item.id, patch)
   void probe({ ...item, ...patch })
 }

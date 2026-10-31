@@ -1,4 +1,4 @@
-import type { Clip, ClipProps, Track } from "../../types"
+import type { Clip, ClipProps, Crop, Track } from "../../types"
 
 // A detached video clip has handed its sound to its audio clip.
 export const audible = (clip: Clip, track: Track) => !track.muted && !track.hidden && !clip.audioDetached && clip.type !== "text"
@@ -17,7 +17,7 @@ export interface Layer {
  * no more than one at 100%. Null means none of it shows. `unit` converts project
  * pixels, which positions are stored in, to canvas pixels.
  */
-export function placeLayer(sourceWidth: number, sourceHeight: number, canvasWidth: number, canvasHeight: number, props: ClipProps, unit: number): Layer | null {
+export function placeLayer(sourceWidth: number, sourceHeight: number, canvasWidth: number, canvasHeight: number, props: ClipProps, unit: number, crop?: Crop): Layer | null {
 
   const scale = (Math.min(canvasWidth / sourceWidth, canvasHeight / sourceHeight) * props.scale) / 100
   const halfWidth = (sourceWidth * scale) / 2
@@ -36,10 +36,10 @@ export function placeLayer(sourceWidth: number, sourceHeight: number, canvasWidt
     }),
   )
 
-  const left = Math.max(-halfWidth, Math.min(...seen.map((p) => p.u)))
-  const right = Math.min(halfWidth, Math.max(...seen.map((p) => p.u)))
-  const top = Math.max(-halfHeight, Math.min(...seen.map((p) => p.v)))
-  const bottom = Math.min(halfHeight, Math.max(...seen.map((p) => p.v)))
+  const left = Math.max(-halfWidth + (crop?.left ?? 0) * halfWidth * 2, Math.min(...seen.map((p) => p.u)))
+  const right = Math.min(halfWidth - (crop?.right ?? 0) * halfWidth * 2, Math.max(...seen.map((p) => p.u)))
+  const top = Math.max(-halfHeight + (crop?.top ?? 0) * halfHeight * 2, Math.min(...seen.map((p) => p.v)))
+  const bottom = Math.min(halfHeight - (crop?.bottom ?? 0) * halfHeight * 2, Math.max(...seen.map((p) => p.v)))
 
   if (left >= right || top >= bottom) return null
 

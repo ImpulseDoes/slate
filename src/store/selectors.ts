@@ -8,6 +8,7 @@ export const isDirty = (s: EditorState) =>
   s.saved.name !== s.projectName ||
   s.saved.tracks !== s.tracks ||
   s.saved.clips !== s.clips ||
+  s.saved.markers !== s.markers ||
   s.saved.settings !== s.settings ||
   s.saved.mediaRevision !== s.mediaRevision
 

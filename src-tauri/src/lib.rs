@@ -1,4 +1,5 @@
 mod audio;
+mod media;
 mod project;
 mod render;
 
@@ -12,6 +13,11 @@ pub fn run() {
         .manage(render::Renders::default())
         .invoke_handler(tauri::generate_handler![
             audio::scan_audio,
+            media::media_info,
+            media::media_proxy,
+            media::media_loudness,
+            media::recording_save,
+            media::file_bytes,
             project::project_write,
             project::project_read,
             project::paths_exist,

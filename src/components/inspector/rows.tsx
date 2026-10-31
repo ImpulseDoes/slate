@@ -1,8 +1,33 @@
 import type { ReactNode } from "react"
 import type { IconSvgElement } from "@hugeicons/react"
-import { Refresh01Icon } from "@hugeicons/core-free-icons"
+import { DiamondIcon, Refresh01Icon } from "@hugeicons/core-free-icons"
 import { useT } from "../../lib/i18n"
-import { Button, Icon, NumberField, Scrub } from "../ui"
+import { Button, Icon, NumberField, Scrub, Tip } from "../ui"
+
+interface KeyframeState {
+  active: boolean
+  here: boolean
+  disabled: boolean
+  onToggle: () => void
+}
+
+function KeyButton({ state }: { state: KeyframeState }) {
+  const t = useT()
+  const label = t(state.here ? "keyframe.remove" : "keyframe.add")
+  return (
+    <Tip label={label}>
+      <button
+        aria-label={label}
+        aria-pressed={state.here}
+        disabled={state.disabled}
+        onClick={state.onToggle}
+        className={`ml-1 inline-flex h-8 w-6 shrink-0 items-center justify-center rounded-sm transition-colors hover:bg-raised disabled:opacity-40 ${state.here ? "text-primary" : state.active ? "text-fg" : "text-muted"}`}
+      >
+        <Icon icon={DiamondIcon} size={14} />
+      </button>
+    </Tip>
+  )
+}
 
 export function ResetRow({ onReset, children }: { onReset: () => void; children?: ReactNode }) {
   const t = useT()
@@ -38,9 +63,10 @@ interface PropertyRowProps {
   max?: number
   step?: number
   unit?: string
+  keyframe?: KeyframeState
 }
 
-export function PropertyRow({ icon, label, value, onChange, onBegin, min = -100000, max = 100000, step = 1, unit }: PropertyRowProps) {
+export function PropertyRow({ icon, label, value, onChange, onBegin, min = -100000, max = 100000, step = 1, unit, keyframe }: PropertyRowProps) {
 
   const clamp = (v: number) => Math.min(max, Math.max(min, v))
   const precision = step < 1 ? 1 : 0
@@ -54,6 +80,7 @@ export function PropertyRow({ icon, label, value, onChange, onBegin, min = -1000
       <div className="flex min-w-0 flex-1">
         <NumberField value={value} onChange={onChange} onBegin={onBegin} min={min} max={max} step={step} unit={unit} precision={precision} />
       </div>
+      {keyframe && <KeyButton state={keyframe} />}
     </div>
   )
 }

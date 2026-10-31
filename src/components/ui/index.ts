@@ -1,5 +1,5 @@
 export { Button } from "./Button"
-export { CLIP_COLORS } from "./clipColors"
+export { CLIP_COLORS, MARKER_COLORS } from "./clipColors"
 export { Field, NumberField, Scrub, Select } from "./fields"
 export { Icon } from "./Icon"
 export { Segmented } from "./Segmented"

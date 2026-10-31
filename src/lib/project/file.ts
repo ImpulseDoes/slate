@@ -1,13 +1,13 @@
-import type { Clip, MediaKind, ProjectSettings, Track } from "../../types"
+import type { Clip, FontRef, Marker, MediaKind, ProjectSettings, Track } from "../../types"
 import { t, type Key } from "../i18n"
 import { TICKS } from "../time"
 
 export const PROJECT_EXTENSION = "slate"
 const FORMAT = "slate-project"
-const VERSION = 1
+const VERSION = 2
 
 // Each entry upgrades a file by one version: the first takes version 1 to 2, and so on.
-const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[] = []
+const MIGRATIONS: ((file: Record<string, unknown>) => Record<string, unknown>)[] = [(file) => ({ ...file, markers: [], fonts: [] })]
 
 export interface MediaRef {
   id: string
@@ -18,6 +18,9 @@ export interface MediaRef {
   width: number
   height: number
   hasAudio?: boolean
+  proxy?: string
+  audioStream?: number
+  companions?: string[]
 }
 
 export interface ProjectFile {
@@ -30,6 +33,8 @@ export interface ProjectFile {
   media: MediaRef[]
   tracks: Track[]
   clips: Clip[]
+  markers: Marker[]
+  fonts: FontRef[]
   view: { playhead: number; pxPerSec: number; snapping: boolean }
 }
 
@@ -41,6 +46,8 @@ interface Source {
   removedMediaIds: string[]
   tracks: Track[]
   clips: Clip[]
+  markers: Marker[]
+  fonts: FontRef[]
   playhead: number
   pxPerSec: number
   snapping: boolean
@@ -56,9 +63,11 @@ export function toProjectFile(s: Source): ProjectFile {
     settings: s.settings,
     media: s.media
       .filter((m) => !s.removedMediaIds.includes(m.id))
-      .map(({ id, name, path, kind, duration, width, height, hasAudio }) => ({ id, name, path, kind, duration, width, height, hasAudio })),
+      .map(({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions }) => ({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions })),
     tracks: s.tracks,
     clips: s.clips,
+    markers: s.markers,
+    fonts: s.fonts,
     view: { playhead: s.playhead, pxPerSec: s.pxPerSec, snapping: s.snapping },
   }
 }
@@ -78,7 +87,7 @@ export function parseProject(text: string): ProjectFile {
   for (let v = file.version; v < VERSION; v++) file = { ...MIGRATIONS[v - 1](file), version: v + 1 }
 
   const project = file as unknown as ProjectFile
-  if (!Array.isArray(project.media) || !Array.isArray(project.tracks) || !Array.isArray(project.clips)) throw damaged("file.damaged.lists")
+  if (!Array.isArray(project.media) || !Array.isArray(project.tracks) || !Array.isArray(project.clips) || !Array.isArray(project.markers) || !Array.isArray(project.fonts)) throw damaged("file.damaged.lists")
   if (!project.settings?.fps?.num || !project.settings.width || !project.settings.height) throw damaged("file.damaged.settings")
   const media = new Set(project.media.map((m) => m.id))
   const tracks = new Set(project.tracks.map((t) => t.id))

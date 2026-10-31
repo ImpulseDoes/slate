@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { Waveform as Wave } from "@audio-ui/react/waveform"
+import { sourceAt, sourceSpan } from "../../lib/clips"
 import { sec } from "../../lib/time"
 import { useEditor } from "../../store/editor"
 import { PEAKS_PER_SECOND, type Clip } from "../../types"
@@ -12,11 +13,11 @@ export function Waveform({ clip, peaks }: { clip: Clip; peaks: number[] }) {
 
   const length = peaks.length / PEAKS_PER_SECOND
   const from = sec(clip.offset)
-  const to = sec(clip.offset + clip.duration)
+  const to = sec(clip.offset + sourceSpan(clip))
 
   const position = useMemo(() => {
 
-    const at = (playhead: number) => sec(clip.offset + playhead - clip.start)
+    const at = (playhead: number) => sec(sourceAt(clip, playhead))
 
     return {
       getSnapshot: () => at(useEditor.getState().playhead),
@@ -24,7 +25,7 @@ export function Waveform({ clip, peaks }: { clip: Clip; peaks: number[] }) {
         if (s.playhead !== prev.playhead) listener()
       }),
     }
-  }, [clip.offset, clip.start])
+  }, [clip])
 
   return (
     <Wave.Root peaks={peaks} duration={length} range={[from, Math.min(to, length)]} source={position} className="absolute inset-x-0 inset-y-1">

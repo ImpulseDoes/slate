@@ -1,5 +1,6 @@
 import type { IconSvgElement } from "@hugeicons/react"
-import { ArrowLeft01Icon, ArrowRight01Icon, CrosshairIcon, NextIcon, PauseIcon, PlayIcon, PreviousIcon } from "@hugeicons/core-free-icons"
+import { ArrowLeft01Icon, ArrowRight01Icon, CrosshairIcon, Mic01Icon, NextIcon, PauseIcon, PlayIcon, PreviousIcon } from "@hugeicons/core-free-icons"
+import { toggleRecording, useRecorder } from "../../lib/audio/recorder"
 import { projectDuration } from "../../lib/clips"
 import { useT } from "../../lib/i18n"
 import { frameTicks, timecode } from "../../lib/time"
@@ -14,6 +15,8 @@ export function Transport() {
   const duration = useEditor((s) => projectDuration(s.clips))
   const showGuides = useEditor((s) => s.showGuides)
   const fps = useEditor((s) => s.settings.fps)
+  const recording = useRecorder((s) => s.recording)
+  const saving = useRecorder((s) => s.saving)
   const { togglePlay, setPlayhead, setPlaying, toggleGuides } = useEditor.getState()
   const stepFrame = (dir: number) => {
     setPlaying(false)
@@ -22,7 +25,7 @@ export function Transport() {
 
   return (
     <div className="flex h-12 shrink-0 items-center rounded-xl bg-surface px-4 shadow-card">
-      <span className="tnum w-28 text-body text-fg">{timecode(playhead, fps)}</span>
+      <span className="tnum w-36 text-body text-fg">{timecode(playhead, fps)}</span>
       <div className="flex flex-1 items-center justify-center gap-0.5">
         <Tip label={t("viewer.goToStart")} kbd="Home">
           <Button variant="quiet" aria-label={t("viewer.goToStart")} onClick={() => setPlayhead(0)}>
@@ -50,7 +53,10 @@ export function Transport() {
           </Button>
         </Tip>
       </div>
-      <div className="flex w-28 items-center justify-end gap-2">
+      <div className="flex w-36 items-center justify-end gap-2">
+        <Tip label={t(recording ? "record.stop" : "record.start")} kbd="R">
+          <Button variant="quiet" icon={Mic01Icon} onClick={toggleRecording} disabled={saving} aria-pressed={recording} aria-label={t(recording ? "record.stop" : "record.start")} className={recording ? "text-error hover:text-error" : ""} />
+        </Tip>
         <Tip label={t("viewer.guides")} kbd="G">
           <Button variant="quiet" icon={CrosshairIcon} active={showGuides} onClick={toggleGuides} aria-pressed={showGuides} aria-label={t("viewer.guides")} />
         </Tip>

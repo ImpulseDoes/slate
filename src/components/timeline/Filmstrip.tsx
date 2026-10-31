@@ -1,3 +1,4 @@
+import { speedOf } from "../../lib/clips"
 import type { Clip, MediaItem } from "../../types"
 
 export function Filmstrip({ clip, media, ppt, width, height }: { clip: Clip; media: MediaItem; ppt: number; width: number; height: number }) {
@@ -15,7 +16,7 @@ export function Filmstrip({ clip, media, ppt, width, height }: { clip: Clip; med
 
     if (media.kind === "video" && media.duration > 0) {
 
-      const t = clip.offset + (i * tileW + tileW / 2) / ppt
+      const t = clip.offset + ((i * tileW + tileW / 2) / ppt) * speedOf(clip)
 
       const idx = Math.min(media.frames.length - 1, Math.max(0, Math.floor((t / media.duration) * media.frames.length)))
 

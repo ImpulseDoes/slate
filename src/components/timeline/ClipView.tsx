@@ -1,7 +1,8 @@
 import { memo } from "react"
 import { Link01Icon } from "@hugeicons/core-free-icons"
+import { speedOf } from "../../lib/clips"
 import { useT } from "../../lib/i18n"
-import type { Clip, MediaItem } from "../../types"
+import type { Clip, MediaItem, Transition } from "../../types"
 import { CLIP_COLORS, Icon } from "../ui"
 import { Filmstrip } from "./Filmstrip"
 import type { DragMode } from "./gestures"
@@ -21,12 +22,19 @@ interface ClipViewProps {
   onDragStart: (e: React.PointerEvent, clip: Clip, mode: DragMode) => void
 }
 
+function Wedge({ transition, side, ppt }: { transition: Transition; side: "left" | "right"; ppt: number }) {
+  const direction = side === "left" ? "to bottom right" : "to bottom left"
+  return <div className="pointer-events-none absolute inset-y-0" style={{ [side]: 0, width: transition.duration * ppt, background: `linear-gradient(${direction}, rgb(0 0 0 / 0.28) 50%, transparent 50%)` }} />
+}
+
 export const ClipView = memo(function ClipView({ clip, media, ppt, height, selected, dragging, linked, locked, onDragStart }: ClipViewProps) {
   const t = useT()
   const left = clip.start * ppt
   const width = Math.max(2, clip.duration * ppt)
   const offline = media?.status === "missing"
   const handles = !locked && width > 14
+  const speed = speedOf(clip)
+  const keyTimes = selected ? [...new Set(Object.values(clip.keys ?? {}).flatMap((list) => list?.map((k) => k.at) ?? []))] : []
 
   return (
     <div
@@ -39,12 +47,18 @@ export const ClipView = memo(function ClipView({ clip, media, ppt, height, selec
       <div className="flex items-center gap-1 px-2 text-small font-semibold" style={{ height: CLIP_LABEL_H }}>
         {linked && <Icon icon={Link01Icon} size={12} className="shrink-0" />}
         <span className="truncate">{offline ? t("clip.offline", { name: clip.name }) : clip.name}</span>
+        {speed !== 1 && <span className="tnum shrink-0 opacity-70">{Math.round(speed * 100)}%</span>}
       </div>
       <div className="relative overflow-hidden" style={{ height: height - 4 - CLIP_LABEL_H }}>
         {clip.type === "video" && media && <Filmstrip clip={clip} media={media} ppt={ppt} width={width} height={height - 4 - CLIP_LABEL_H} />}
         {clip.type === "audio" && media?.peaks && <Waveform clip={clip} peaks={media.peaks} />}
         {clip.type === "text" && clip.text && <div className="truncate px-2 text-small opacity-80">{clip.text.content}</div>}
       </div>
+      {clip.enter && <Wedge transition={clip.enter} side="left" ppt={ppt} />}
+      {clip.exit && <Wedge transition={clip.exit} side="right" ppt={ppt} />}
+      {keyTimes.map((at) => (
+        <div key={at} className="pointer-events-none absolute bottom-0.5 h-2 w-2 -translate-x-1/2 rotate-45 bg-primary ring-1 ring-white" style={{ left: ((at - clip.offset) / speed) * ppt }} />
+      ))}
       {handles && (
         <>
           <div className="absolute inset-y-0 left-0 w-2 cursor-ew-resize group-hover:bg-black/15" onPointerDown={(e) => onDragStart(e, clip, "trim-l")} />

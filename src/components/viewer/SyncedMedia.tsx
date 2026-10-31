@@ -1,17 +1,20 @@
 import { useEffect, useRef } from "react"
+import { propsAt, soundAt } from "../../lib/animation"
+import { setGain, routeToBus } from "../../lib/audio/mixer"
+import { sourceAt, speedOf } from "../../lib/clips"
 import { frameTicks, sec } from "../../lib/time"
-import { routeToBus } from "../../lib/audio/mixer"
 import { useEditor } from "../../store/editor"
 import type { Clip, MediaItem } from "../../types"
 
 const DRIFT = 0.25
 
-export function SyncedMedia({ kind, clip, media, active, muted, style, onPointerDown }: { kind: "video" | "audio"; clip: Clip; media: MediaItem; active: boolean; muted: boolean; style?: React.CSSProperties; onPointerDown?: React.PointerEventHandler }) {
+export function SyncedMedia({ kind, clip, media, active, muted, tail, style, onPointerDown }: { kind: "video" | "audio"; clip: Clip; media: MediaItem; active: boolean; muted: boolean; tail: number; style?: React.CSSProperties; onPointerDown?: React.PointerEventHandler }) {
 
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null)
   const playhead = useEditor((s) => s.playhead)
   const playing = useEditor((s) => s.playing)
   const fps = useEditor((s) => s.settings.fps)
+  const speed = speedOf(clip)
 
   useEffect(() => {
     if (ref.current) routeToBus(ref.current)
@@ -24,7 +27,8 @@ export function SyncedMedia({ kind, clip, media, active, muted, style, onPointer
     if (!el) return
 
     el.muted = muted
-    el.volume = Math.min(1, Math.max(0, clip.props.volume / 100))
+    el.playbackRate = speed
+    setGain(el, (propsAt(clip, playhead).volume / 100) * soundAt(clip, playhead, tail))
 
     if (!active) {
 
@@ -35,7 +39,8 @@ export function SyncedMedia({ kind, clip, media, active, muted, style, onPointer
 
     }
 
-    const target = sec(clip.offset + (playhead - clip.start))
+    // Past the end of its source, under a dissolve, the clip holds its last frame.
+    const target = Math.min(sec(sourceAt(clip, playhead)), sec(media.duration))
 
     if (playing) {
 
@@ -45,16 +50,16 @@ export function SyncedMedia({ kind, clip, media, active, muted, style, onPointer
 
         void el.play().catch(() => { })
 
-      } else if (Math.abs(el.currentTime - target) > DRIFT) {
+      } else if (Math.abs(el.currentTime - target) > DRIFT * Math.max(1, speed)) {
         el.currentTime = target
       }
     } else {
 
       if (!el.paused) el.pause()
-      if (Math.abs(el.currentTime - target) > sec(frameTicks(fps)) / 2) el.currentTime = target
+      if (Math.abs(el.currentTime - target) > (sec(frameTicks(fps)) * speed) / 2) el.currentTime = target
 
     }
-  }, [playhead, playing, active, muted, clip.offset, clip.start, clip.props.volume, fps])
+  }, [playhead, playing, active, muted, clip, speed, tail, media.duration, fps])
 
   if (kind === "audio") return <audio ref={ref} crossOrigin="anonymous" src={media.src} preload="auto" />
 

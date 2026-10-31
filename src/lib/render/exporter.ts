@@ -4,14 +4,19 @@ import { useEditor } from "../../store/editor"
 import { notify } from "../../store/overlays"
 import { useRenders } from "../../store/renders"
 import { liveMedia } from "../../store/selectors"
+import { typewriterSteps } from "../animation"
 import { clipEnd } from "../clips"
 import { errorText } from "../errors"
 import { t } from "../i18n"
 import { baseName } from "../paths"
+import type { Clip } from "../../types"
 import { assumedMatrix, CONTAINER, planRender, type ExportOptions, type TitleImage } from "./plan"
 import { drawTitle } from "./titles"
 
 const MAX_TITLE_SCALE = 3
+
+/** The largest size a title ever reaches, including its animation's overshoot. */
+const largestScale = (clip: Clip) => Math.max(clip.props.scale, ...(clip.keys?.scale ?? []).map((k) => k.value)) * (clip.text?.animation === "pop" ? 1.1 : 1)
 
 export function checkExportable(range: [number, number]): string | null {
 
@@ -53,18 +58,21 @@ export async function queueExport(options: ExportOptions): Promise<boolean> {
   const images: { name: string; bytes: number[] }[] = []
   const drawn = new Map<string, TitleImage>()
   const unit = options.width / state.settings.width
+  const clips = state.clips.flatMap((c) => (c.text?.animation === "typewriter" ? typewriterSteps(c).map((step) => step.clip) : [c]))
+  const reveals = new Map(state.clips.flatMap((c) => (c.text?.animation === "typewriter" ? typewriterSteps(c).map((step): [string, number] => [step.clip.id, step.reveal]) : [])))
 
-  for (const clip of state.clips) {
+  for (const clip of clips) {
 
     if (!clip.text || clip.start >= options.range[1] || clipEnd(clip) <= options.range[0]) continue
 
-    const sharpness = Math.min(MAX_TITLE_SCALE, Math.max(1, clip.props.scale / 100))
-    const key = JSON.stringify([clip.text, sharpness])
+    const sharpness = Math.min(MAX_TITLE_SCALE, Math.max(1, largestScale(clip) / 100))
+    const reveal = reveals.get(clip.id)
+    const key = JSON.stringify([clip.text, sharpness, reveal])
 
     if (!drawn.has(key)) {
 
       const image = { file: `title${drawn.size}.png`, width: Math.round(options.width * sharpness), height: Math.round(options.height * sharpness) }
-      images.push({ name: image.file, bytes: await drawTitle(clip.text, image.width, image.height, clip.text.size * unit * sharpness) })
+      images.push({ name: image.file, bytes: await drawTitle(clip.text, image.width, image.height, unit * sharpness, reveal) })
       drawn.set(key, image)
     }
     titles[clip.id] = drawn.get(key)!
@@ -72,7 +80,7 @@ export async function queueExport(options: ExportOptions): Promise<boolean> {
 
   try {
 
-    const plan = planRender({ settings: state.settings, tracks: state.tracks, clips: state.clips, media, titles }, options)
+    const plan = planRender({ settings: state.settings, tracks: state.tracks, clips, media, titles }, options)
 
     useRenders.getState().enqueue({ name: baseName(output), output, plan, images })
 

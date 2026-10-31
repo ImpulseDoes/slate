@@ -14,6 +14,14 @@ export interface MediaItem {
   frames: string[]
   peaks?: number[]
   hasAudio?: boolean
+  /** Playable copy for the viewer when the webview can't decode the recording. Export always reads `path`. */
+  proxy?: string
+  /** Which audio stream of `path` this is, for the extra tracks of a multi-track recording. */
+  audioStream?: number
+  /** Media ids of those extra tracks, placed on the timeline together with the video. */
+  companions?: string[]
+  /** Progress of a running conversion, 0 to 1. */
+  progress?: number
   status: "loading" | "ready" | "error" | "missing"
   error?: string
 }
@@ -40,10 +48,46 @@ export interface ClipProps {
   volume: number
 }
 
+export type TextAnimation = "fade" | "pop" | "slide" | "typewriter"
+
 export interface TextProps {
   content: string
   size: number
   color: string
+  font?: string
+  outline?: number
+  outlineColor?: string
+  shadow?: boolean
+  box?: boolean
+  animation?: TextAnimation
+}
+
+export type Easing = "linear" | "smooth" | "in" | "out"
+
+export type AnimatedProp = keyof ClipProps
+
+/** `at` is source time, so trimming or splitting a clip leaves its animation where it was. `ease` shapes the way to the next key. */
+export interface Keyframe {
+  at: Ticks
+  value: number
+  ease: Easing
+}
+
+export type Keyframes = Partial<Record<AnimatedProp, Keyframe[]>>
+
+export type TransitionKind = "fade" | "dip" | "dissolve"
+
+export interface Transition {
+  kind: TransitionKind
+  duration: Ticks
+}
+
+/** Share of the source hidden from each side, 0 to 1. */
+export interface Crop {
+  left: number
+  top: number
+  right: number
+  bottom: number
 }
 
 export interface Clip {
@@ -59,6 +103,26 @@ export interface Clip {
   text?: TextProps
   audioDetached?: boolean
   linkId?: string
+  /** Playback rate: 2 plays twice as fast, so the clip covers twice as much of its source. */
+  speed?: number
+  keys?: Keyframes
+  enter?: Transition
+  exit?: Transition
+  crop?: Crop
+}
+
+export type MarkerColor = "blue" | "green" | "yellow" | "orange" | "red" | "purple"
+
+export interface Marker {
+  id: string
+  at: Ticks
+  name: string
+  color: MarkerColor
+}
+
+export interface FontRef {
+  family: string
+  path: string
 }
 
 export interface ProjectSettings {

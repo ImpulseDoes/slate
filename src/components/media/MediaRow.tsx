@@ -103,7 +103,7 @@ export function MediaRow({ item }: { item: MediaItem }) {
           ) : (
             <TypeChip type={item.kind} compact />
           )}
-          {item.status === "loading" && <span className="text-small text-muted">{t("media.reading")}</span>}
+          {item.status === "loading" && <span className="tnum text-small text-muted">{item.progress === undefined ? t("media.reading") : t("media.converting", { percent: Math.round(item.progress * 100) })}</span>}
           {ready && item.kind !== "image" && (
             <span className="tnum inline-flex items-center gap-1 text-small text-label">
               <Icon icon={Clock01Icon} size={14} />

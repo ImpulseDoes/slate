@@ -10,6 +10,7 @@ import { checkExportable, queueExport } from "../../lib/render/exporter"
 import { ENCODER, type Codec, type ExportOptions, type Quality, type Speed } from "../../lib/render/plan"
 import { fpsLabel, FRAME_RATES, frameIndex, frameTicks, sameFps, sec, ticks, timecode } from "../../lib/time"
 import { useEditor } from "../../store/editor"
+import { isVertical } from "../../lib/vertical"
 import { openDialog } from "../../store/overlays"
 import { Modal } from "../overlays/Modal"
 import { Button, Field, NumberField, Select, TimePill } from "../ui"
@@ -18,13 +19,16 @@ const PROJECT_VALUE = "project"
 const HEIGHTS = [2160, 1440, 1080, 720, 480]
 const CRF = { best: 16, high: 20, balanced: 24, small: 29 }
 
-type Preset = { id: string; label: Key; codec: Codec; height: number | null; quality: string; mbps: number; speed: Speed }
+type Preset = { id: string; label: Key; codec: Codec; height: number | null; quality: string; mbps: number; speed: Speed; vertical?: boolean }
 
 const PRESETS: Preset[] = [
   { id: "web", label: "export.preset.web", codec: "h264", height: null, quality: "high", mbps: 12, speed: "medium" },
   { id: "small", label: "export.preset.small", codec: "h265", height: null, quality: "balanced", mbps: 8, speed: "medium" },
   { id: "draft", label: "export.preset.draft", codec: "h264", height: 720, quality: "balanced", mbps: 5, speed: "veryfast" },
   { id: "master", label: "export.preset.master", codec: "prores", height: null, quality: "best", mbps: 0, speed: "medium" },
+  { id: "tiktok", label: "export.preset.tiktok", codec: "h264", height: null, quality: "bitrate", mbps: 16, speed: "medium", vertical: true },
+  { id: "shorts", label: "export.preset.shorts", codec: "h264", height: null, quality: "bitrate", mbps: 14, speed: "medium", vertical: true },
+  { id: "reels", label: "export.preset.reels", codec: "h264", height: null, quality: "bitrate", mbps: 10, speed: "medium", vertical: true },
 ]
 const CUSTOM = "custom"
 
@@ -207,6 +211,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           <span className="tnum text-small text-muted">{t("export.frames", { count: frames })}</span>
         </Field>
       </div>
+      {PRESETS.find((p) => p.id === presetId)?.vertical && !isVertical(settings) && (
+        <p className="mt-4 flex items-center gap-2 text-body text-label">
+          <span className="flex-1">{t("export.notVertical")}</span>
+          <Button onClick={() => openDialog("vertical")}>{t("tools.vertical")}</Button>
+        </p>
+      )}
       {(blocker || error) && <p className="mt-4 text-body text-error">{error ?? blocker}</p>}
     </Modal>
   )

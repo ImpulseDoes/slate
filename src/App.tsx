@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from "react"
 import { OutputMeter } from "./components/audio/OutputMeter"
 import { ExportDialog } from "./components/dialogs/ExportDialog"
 import { LanguageDialog } from "./components/dialogs/LanguageDialog"
+import { MarkerDialog } from "./components/dialogs/MarkerDialog"
 import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
 import { RendersDialog } from "./components/dialogs/RendersDialog"
+import { SilenceDialog } from "./components/dialogs/SilenceDialog"
+import { VerticalDialog } from "./components/dialogs/VerticalDialog"
 import { Inspector } from "./components/inspector/Inspector"
 import { TopBar } from "./components/layout/TopBar"
 import { DragGhost } from "./components/media/DragGhost"
@@ -70,6 +73,9 @@ export default function App() {
       {dialog === "settings" && <ProjectSettingsDialog onClose={closeDialog} />}
       {dialog === "renders" && <RendersDialog onClose={closeDialog} />}
       {dialog === "language" && <LanguageDialog onClose={closeDialog} />}
+      {dialog === "marker" && <MarkerDialog onClose={closeDialog} />}
+      {dialog === "silence" && <SilenceDialog onClose={closeDialog} />}
+      {dialog === "vertical" && <VerticalDialog onClose={closeDialog} />}
       <Overlays />
     </div>
   )

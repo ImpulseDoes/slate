@@ -1,7 +1,10 @@
-import { CheckmarkCircle02Icon, Clock01Icon, Download04Icon, File01Icon, FilePlusIcon, FloppyDiskIcon, Folder01Icon, FolderOpenIcon, LanguageSquareIcon, LoaderPinwheelIcon, Redo02Icon, Settings02Icon, Undo02Icon } from "@hugeicons/core-free-icons"
+import { CheckmarkCircle02Icon, Clock01Icon, Download04Icon, File01Icon, FilePlusIcon, FloppyDiskIcon, Folder01Icon, FolderOpenIcon, LanguageSquareIcon, LoaderPinwheelIcon, Mic01Icon, Redo02Icon, ScissorIcon, Settings02Icon, SmartPhone01Icon, SubtitleIcon, Undo02Icon, VolumeHighIcon, VolumeLowIcon } from "@hugeicons/core-free-icons"
+import { toggleRecording } from "../../lib/audio/recorder"
+import { canUseSoundTools, duckSelected, normalizeSelected } from "../../lib/audio/tools"
 import { t, useT } from "../../lib/i18n"
 import { isMac, isTauri, MOD } from "../../lib/platform"
 import { openProject, recentProjects, saveProject, saveProjectAs, startNewProject } from "../../lib/project/session"
+import { importCaptions } from "../../lib/text/captions"
 import { useEditor } from "../../store/editor"
 import { openDialog, openMenuBelow, type MenuEntry } from "../../store/overlays"
 import { runningRenders, useRenders } from "../../store/renders"
@@ -23,6 +26,20 @@ function fileMenu(e: React.MouseEvent) {
     { label: t("file.language"), icon: LanguageSquareIcon, onSelect: () => openDialog("language") },
     { label: t("file.export"), icon: Download04Icon, kbd: `${MOD} E`, disabled: !hasClips, onSelect: () => openDialog("export") },
     ...(recent.length ? (["divider", ...recent] as MenuEntry[]) : []),
+  ])
+}
+
+function toolsMenu(e: React.MouseEvent) {
+  const sound = canUseSoundTools(useEditor.getState())
+  openMenuBelow(e, [
+    { label: t("tools.captions"), icon: SubtitleIcon, disabled: !isTauri, onSelect: () => void importCaptions() },
+    "divider",
+    { label: t("record.start"), icon: Mic01Icon, kbd: "R", disabled: !isTauri, onSelect: toggleRecording },
+    { label: t("tools.level"), icon: VolumeHighIcon, disabled: !sound || !isTauri, onSelect: () => void normalizeSelected() },
+    { label: t("tools.duck"), icon: VolumeLowIcon, disabled: !sound, onSelect: duckSelected },
+    { label: t("tools.silence"), icon: ScissorIcon, disabled: !sound, onSelect: () => openDialog("silence") },
+    "divider",
+    { label: t("tools.vertical"), icon: SmartPhone01Icon, onSelect: () => openDialog("vertical") },
   ])
 }
 
@@ -61,6 +78,9 @@ export function TopBar() {
       <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
         <Button variant="quiet" onClick={fileMenu}>
           {t("menu.file")}
+        </Button>
+        <Button variant="quiet" onClick={toolsMenu}>
+          {t("menu.tools")}
         </Button>
         <span data-tauri-drag-region className="truncate text-h-sm font-semibold text-fg">
           {projectName}

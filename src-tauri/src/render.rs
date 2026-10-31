@@ -20,7 +20,7 @@ const CANCELLED: &str = "cancelled";
 const EXIT_WAIT: Duration = Duration::from_secs(3);
 
 #[derive(Default)]
-struct Control {
+pub struct Control {
     cancelled: AtomicBool,
     child: Mutex<Option<Child>>,
 }
@@ -34,12 +34,46 @@ impl Control {
             }
         }
     }
+
+    /// Keeps a running FFmpeg where `stop` can reach it.
+    pub fn hold(&self, child: Child) -> Result<(), String> {
+        *self.child.lock().map_err(|e| e.to_string())? = Some(child);
+        if self.cancelled.load(Ordering::SeqCst) {
+            self.stop();
+        }
+        Ok(())
+    }
+
+    /// Waits for the FFmpeg in `hold` and turns how it ended into a result.
+    pub fn finish(&self, errors: String) -> Result<(), String> {
+        let child = self.child.lock().map_err(|e| e.to_string())?.take();
+        let status = child.ok_or("FFmpeg vanished.")?.wait().map_err(|e| e.to_string())?;
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err(CANCELLED.into());
+        }
+        if status.success() {
+            return Ok(());
+        }
+        Err(if errors.is_empty() { format!("ffmpeg-exit: {status}") } else { errors })
+    }
 }
 
-#[derive(Default)]
-pub struct Renders(Mutex<HashMap<String, Arc<Control>>>);
+#[derive(Clone, Default)]
+pub struct Renders(Arc<Mutex<HashMap<String, Arc<Control>>>>);
 
 impl Renders {
+    pub fn track(&self, id: &str) -> Result<Arc<Control>, String> {
+        let control = Arc::new(Control::default());
+        self.0.lock().map_err(|e| e.to_string())?.insert(id.to_string(), control.clone());
+        Ok(control)
+    }
+
+    pub fn forget(&self, id: &str) {
+        if let Ok(mut running) = self.0.lock() {
+            running.remove(id);
+        }
+    }
+
     pub fn stop_all(&self) {
         if let Ok(running) = self.0.lock() {
             running.values().for_each(|control| control.stop());
@@ -78,7 +112,7 @@ struct Progress<'a> {
     frame: u64,
 }
 
-fn ffmpeg() -> Command {
+pub fn ffmpeg() -> Command {
     let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
     let sidecar = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(name))).filter(|path| path.is_file());
     let mut command = Command::new(sidecar.unwrap_or_else(|| PathBuf::from(name)));
@@ -92,7 +126,7 @@ fn ffmpeg() -> Command {
     command
 }
 
-fn start_failed(error: io::Error) -> String {
+pub fn start_failed(error: io::Error) -> String {
     format!("ffmpeg-start: {error}")
 }
 
@@ -128,10 +162,7 @@ fn run_step(app: &AppHandle, id: &str, step: usize, args: &[String], work: &Path
         .map_err(start_failed)?;
     let stdout = child.stdout.take().ok_or("FFmpeg has no output pipe.")?;
     let stderr = child.stderr.take().ok_or("FFmpeg has no error pipe.")?;
-    *control.child.lock().map_err(|e| e.to_string())? = Some(child);
-    if control.cancelled.load(Ordering::SeqCst) {
-        control.stop();
-    }
+    control.hold(child)?;
 
     // Read this on its own thread: a full error pipe would stall FFmpeg.
     let errors = thread::spawn(move || {
@@ -151,16 +182,7 @@ fn run_step(app: &AppHandle, id: &str, step: usize, args: &[String], work: &Path
         }
     }
 
-    let child = control.child.lock().map_err(|e| e.to_string())?.take();
-    let status = child.ok_or("FFmpeg vanished.")?.wait().map_err(|e| e.to_string())?;
-    let errors = errors.join().unwrap_or_default();
-    if control.cancelled.load(Ordering::SeqCst) {
-        return Err(CANCELLED.into());
-    }
-    if status.success() {
-        return Ok(());
-    }
-    Err(if errors.is_empty() { format!("ffmpeg-exit: {status}") } else { errors })
+    control.finish(errors.join().unwrap_or_default())
 }
 
 fn run(app: &AppHandle, job: &RenderJob, control: &Control, work: &Path) -> Result<(), String> {
@@ -176,9 +198,8 @@ fn run(app: &AppHandle, job: &RenderJob, control: &Control, work: &Path) -> Resu
 #[tauri::command]
 pub async fn render_start(app: AppHandle, renders: State<'_, Renders>, job: RenderJob) -> Result<(), String> {
     let work = work_dir(&job.id, Path::new(&job.output))?;
-    let control = Arc::new(Control::default());
     let id = job.id.clone();
-    renders.0.lock().map_err(|e| e.to_string())?.insert(id.clone(), control.clone());
+    let control = renders.track(&id)?;
     let handle = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let result = run(&handle, &job, &control, &work);
@@ -188,7 +209,7 @@ pub async fn render_start(app: AppHandle, renders: State<'_, Renders>, job: Rend
     .await
     .map_err(|e| e.to_string());
     if let Some(renders) = app.try_state::<Renders>() {
-        renders.0.lock().map_err(|e| e.to_string())?.remove(&id);
+        renders.forget(&id);
     }
     result?
 }

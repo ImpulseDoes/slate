@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react"
+import { dissolveTails, keyedPropsAt } from "../../lib/animation"
 import { CrosshairIcon, PauseIcon, PlayIcon, PreviousIcon, SquareSplitHorizontalIcon, TextIcon } from "@hugeicons/core-free-icons"
 import { clipEnd } from "../../lib/clips"
 import { t, useT } from "../../lib/i18n"
@@ -27,6 +28,8 @@ export function Stage() {
   const [centered, setCentered] = useState({ x: false, y: false })
 
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
+  const tails = useMemo(() => dissolveTails(clips), [clips])
+  const byStart = useMemo(() => [...clips].sort((a, b) => a.start - b.start), [clips])
 
   const beginMove = (e: React.PointerEvent, clip: Clip) => {
     const state = useEditor.getState()
@@ -35,7 +38,7 @@ export function Stage() {
     e.stopPropagation()
     if (!state.selectedClipIds.includes(clip.id)) state.selectClip(clip.id)
     const { clientX, clientY } = e
-    const { x: startX, y: startY } = clip.props
+    const { x: startX, y: startY } = keyedPropsAt(clip, Math.min(clipEnd(clip) - 1, Math.max(clip.start, state.playhead)))
     const toProject = settings.width / rect.width
     let begun = false
     const move = (ev: PointerEvent) => {
@@ -52,8 +55,9 @@ export function Stage() {
     }
     trackPointer(move, () => setCentered({ x: false, y: false }))
   }
-  const near = (c: Clip) => c.start - PRELOAD <= playhead && clipEnd(c) > playhead
-  const active = (c: Clip) => c.start <= playhead && clipEnd(c) > playhead
+  const tailOf = (c: Clip) => tails.get(c.id) ?? 0
+  const near = (c: Clip) => c.start - PRELOAD <= playhead && clipEnd(c) + tailOf(c) > playhead
+  const active = (c: Clip) => c.start <= playhead && clipEnd(c) + tailOf(c) > playhead
   const videoTracks = tracks.filter((t) => t.kind === "video").reverse()
   const audioTracks = tracks.filter((t) => t.kind === "audio")
 
@@ -61,10 +65,10 @@ export function Stage() {
     <div onContextMenu={stageMenu} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-viewer shadow-card [container-type:size]">
       <div ref={frame} className="relative overflow-hidden bg-black [container-type:inline-size]" style={{ aspectRatio: `${settings.width} / ${settings.height}`, width: `min(100cqw, 100cqh * ${settings.width / settings.height})` }}>
         {videoTracks.map((t, z) =>
-          clips
+          byStart
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => (
-              <Layer key={c.id} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} settings={settings} onMove={beginMove} />
+              <Layer key={c.id} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} time={playhead} tail={tailOf(c)} settings={settings} onMove={beginMove} />
             )),
         )}
         {audioTracks.map((t) =>
@@ -72,7 +76,7 @@ export function Stage() {
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => {
               const m = c.mediaId ? mediaById.get(c.mediaId) : undefined
-              return m ? <SyncedMedia key={c.id} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} /> : null
+              return m ? <SyncedMedia key={c.id} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} /> : null
             }),
         )}
         {clips.length === 0 && (
