@@ -1,6 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "pl.idoes.slate",
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
   "app": {
     "windows": [
       {

@@ -24,7 +24,8 @@ await mkdir(binaries, { recursive: true })
 
 if (process.platform !== "win32") {
   const system = Bun.which("ffmpeg")
-  if (!system) throw new Error("Install FFmpeg first, then run this again. Slate copies the one on your PATH.")
+  // Packaged FFmpeg rarely has the whisper filter; automatic captions need scripts/build-ffmpeg.sh.
+  if (!system) throw new Error("Install FFmpeg or run scripts/build-ffmpeg.sh, then run this again. Slate copies the one on your PATH.")
   await copyFile(system, target)
   await chmod(target, 0o755)
   console.log(`Copied ${system} to ${target}`)
@@ -39,9 +40,12 @@ try {
   await $`curl -fsSL --retry 3 -o ${archive} ${WINDOWS_BUILD}`
   const hash = createHash("sha256").update(await Bun.file(archive).bytes()).digest("hex")
   if (hash !== SHA256) throw new Error(`Checksum mismatch: got ${hash}`)
-  // Windows' own tar: Git Bash's reads "C:" as a remote host and can't open 7z.
+  // 7-Zip where it's installed, as on the build servers, whose Windows tar may not open 7z.
+  // Otherwise Windows' own tar: Git Bash's reads "C:" as a remote host.
+  const sevenZip = Bun.which("7z")
   const tar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
-  await $`${tar} -xf ${archive} -C ${work}`
+  if (sevenZip) await $`${sevenZip} x -y -bd -o${work} ${archive}`.quiet()
+  else await $`${tar} -xf ${archive} -C ${work}`
   const folder = join(work, BUILD)
   await copyFile(join(folder, "bin", "ffmpeg.exe"), target)
   await copyFile(join(folder, "bin", "ffprobe.exe"), join(binaries, "ffprobe.exe"))
