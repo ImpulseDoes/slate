@@ -1,9 +1,9 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
-import { Add01Icon, AlertCircleIcon, Clock01Icon, Delete02Icon, FileImportIcon, FolderOpenIcon, Image01Icon, MusicNote01Icon } from "@hugeicons/core-free-icons"
+import { Add01Icon, AlertCircleIcon, Clock01Icon, Delete02Icon, FileImportIcon, FileSearchIcon, FolderOpenIcon, Image01Icon, MusicNote01Icon } from "@hugeicons/core-free-icons"
 import { useShallow } from "zustand/react/shallow"
 import { clipTypeForMedia, liveMedia, trackKindFor, useEditor, useMediaDrag } from "../store/editor"
-import { pickAndImport } from "../lib/media"
-import { shortDuration } from "../lib/time"
+import { pickAndImport, relinkMissing } from "../lib/media"
+import { shortDuration, TICKS } from "../lib/time"
 import { isTauri, MOD } from "../lib/platform"
 import type { MediaItem } from "../types"
 import { confirmAction, openMenu, type MenuEntry } from "./overlays"
@@ -75,9 +75,12 @@ function requestRemove(item: MediaItem) {
 
 function mediaMenu(e: React.MouseEvent, item: MediaItem) {
   useEditor.getState().selectMedia(item.id)
-  const reveal: MenuEntry[] = isTauri ? [{ label: "Show in folder", icon: FolderOpenIcon, onSelect: () => void revealItemInDir(item.path) }] : []
+  const offline = item.status === "missing"
+  const reveal: MenuEntry[] = isTauri && !offline ? [{ label: "Show in folder", icon: FolderOpenIcon, onSelect: () => void revealItemInDir(item.path) }] : []
+  const relink: MenuEntry[] = isTauri && offline ? [{ label: "Locate file", icon: FileSearchIcon, onSelect: () => void relinkMissing(item) }] : []
   openMenu(e, [
     { label: "Add to timeline", icon: Add01Icon, disabled: item.status !== "ready", onSelect: () => insertAtPlayhead(item) },
+    ...relink,
     ...reveal,
     "divider",
     { label: "Remove from project", icon: Delete02Icon, danger: true, onSelect: () => requestRemove(item) },
@@ -129,9 +132,17 @@ function MediaRow({ item }: { item: MediaItem }) {
     >
       <Thumb item={item} />
       <div className="min-w-0 flex-1">
-        <div className={`truncate ${item.status === "error" ? "text-label" : "text-fg"}`}>{item.name}</div>
+        <div className={`truncate ${item.status === "error" || item.status === "missing" ? "text-label" : "text-fg"}`}>{item.name}</div>
         <div className="mt-1 flex items-center gap-2">
-          {item.status === "error" ? (
+          {item.status === "missing" ? (
+            <Tip label={`Not found at ${item.path}`}>
+              <button onClick={() => void relinkMissing(item)} onPointerDown={(e) => e.stopPropagation()}>
+                <StatusTag tone="error" icon={FileSearchIcon}>
+                  Locate
+                </StatusTag>
+              </button>
+            </Tip>
+          ) : item.status === "error" ? (
             <Tip label={item.error ?? "This file can't be read."}>
               <StatusTag tone="error" icon={AlertCircleIcon}>
                 Error
@@ -176,7 +187,7 @@ function dropOnTimeline(item: MediaItem, x: number, y: number) {
   if (!lane) return
   const { pxPerSec, insertClip } = useEditor.getState()
   const rect = lane.getBoundingClientRect()
-  insertClip(item.id, lane.dataset.trackId!, (x - rect.left) / pxPerSec)
+  insertClip(item.id, lane.dataset.trackId!, ((x - rect.left) / pxPerSec) * TICKS)
 }
 
 function insertAtPlayhead(item: MediaItem) {

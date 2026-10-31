@@ -1,3 +1,5 @@
+import type { Fps } from "./lib/time"
+
 export type MediaKind = "video" | "audio" | "image"
 
 export interface MediaItem {
@@ -6,13 +8,14 @@ export interface MediaItem {
   path: string
   src: string
   kind: MediaKind
+  /** Ticks. */
   duration: number
   width: number
   height: number
   frames: string[]
   peaks?: number[]
   hasAudio?: boolean
-  status: "loading" | "ready" | "error"
+  status: "loading" | "ready" | "error" | "missing"
   error?: string
 }
 
@@ -50,6 +53,7 @@ export interface Clip {
   type: ClipType
   mediaId?: string
   name: string
+  /** Ticks, like offset and duration. */
   start: number
   offset: number
   duration: number
@@ -59,5 +63,11 @@ export interface Clip {
   linkId?: string
 }
 
-export const PROJECT = { width: 1920, height: 1080, fps: 30 } as const
+export interface ProjectSettings {
+  width: number
+  height: number
+  fps: Fps
+}
+
+export const DEFAULT_SETTINGS: ProjectSettings = { width: 1920, height: 1080, fps: { num: 30, den: 1 } }
 export const PEAKS_PER_SECOND = 50

@@ -1,4 +1,8 @@
 mod audio;
+mod project;
+mod render;
+
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -7,7 +11,26 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![audio::scan_audio])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .manage(render::Renders::default())
+        .invoke_handler(tauri::generate_handler![
+            audio::scan_audio,
+            project::project_write,
+            project::project_read,
+            project::paths_exist,
+            project::autosave_write,
+            project::autosave_list,
+            project::autosave_remove,
+            render::render_start,
+            render::render_cancel,
+            render::render_encoders,
+            render::render_probe,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // A render is a separate process, so it would outlive the window otherwise.
+            if let RunEvent::Exit = event {
+                app.state::<render::Renders>().stop_all();
+            }
+        });
 }

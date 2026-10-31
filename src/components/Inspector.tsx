@@ -11,6 +11,7 @@ import {
   MusicNote01Icon,
   Refresh01Icon,
   Rotate01Icon,
+  Settings02Icon,
   TextFontIcon,
   TextIcon,
   Timer01Icon,
@@ -19,8 +20,9 @@ import {
   ZoomInIcon,
 } from "@hugeicons/core-free-icons"
 import { canDetachAudio, DEFAULT_PROPS, projectDuration, useEditor } from "../store/editor"
-import { timecode } from "../lib/time"
-import { PROJECT, type Clip, type ClipProps, type MediaItem } from "../types"
+import { fpsLabel, timecode } from "../lib/time"
+import type { Clip, ClipProps, MediaItem } from "../types"
+import { openDialog } from "./overlays"
 import { Button, Icon, NumberField, Scrub, Segmented, TimePill, TypeChip } from "./ui"
 
 export function Inspector() {
@@ -44,21 +46,27 @@ export function Inspector() {
 function ProjectInspector({ multi }: { multi: number }) {
 
   const duration = useEditor((s) => projectDuration(s.clips))
+  const { width, height, fps } = useEditor((s) => s.settings)
 
   return (
     <>
-      <h2 className="mb-3 text-h-md font-semibold">Project</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-h-md font-semibold">Project</h2>
+        <Button icon={Settings02Icon} onClick={() => openDialog("settings")}>
+          Settings
+        </Button>
+      </div>
       <div className="flex flex-col gap-3">
         <InfoRow label="Resolution">
           <span className="tnum">
-            {PROJECT.width} × {PROJECT.height}
+            {width} × {height}
           </span>
         </InfoRow>
         <InfoRow label="Frame rate">
-          <span className="tnum">{PROJECT.fps} fps</span>
+          <span className="tnum">{fpsLabel(fps)} fps</span>
         </InfoRow>
         <InfoRow label="Duration">
-          <TimePill icon={Clock01Icon}>{timecode(duration)}</TimePill>
+          <TimePill icon={Clock01Icon}>{timecode(duration, fps)}</TimePill>
         </InfoRow>
       </div>
       <p className="mt-6 text-body text-muted">{multi ? `${multi} clips selected.` : "Select a clip to tweak it."}</p>
@@ -72,6 +80,7 @@ function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }) {
 
   const { checkpoint, updateClipProps, updateClipText, resetTransform, detachAudio } = useEditor.getState()
   const locked = useEditor((s) => !!s.tracks.find((t) => t.id === clip.trackId)?.locked)
+  const fps = useEditor((s) => s.settings.fps)
   const isImage = media?.kind === "image"
   const [picked, setPicked] = useState<Tab | null>(null)
   const set = (patch: Partial<ClipProps>) => updateClipProps(clip.id, patch)
@@ -104,10 +113,10 @@ function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }) {
           <TypeChip type={isImage ? "image" : clip.type} />
         </InfoRow>
         <InfoRow icon={Clock01Icon} label="Start">
-          <TimePill>{timecode(clip.start)}</TimePill>
+          <TimePill>{timecode(clip.start, fps)}</TimePill>
         </InfoRow>
         <InfoRow icon={Timer01Icon} label="Duration">
-          <TimePill>{timecode(clip.duration)}</TimePill>
+          <TimePill>{timecode(clip.duration, fps)}</TimePill>
         </InfoRow>
       </div>
 

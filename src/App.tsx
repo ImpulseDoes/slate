@@ -1,12 +1,16 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { TopBar } from "./components/TopBar"
 import { MediaBin } from "./components/MediaBin"
 import { Viewer } from "./components/Viewer"
 import { Inspector } from "./components/Inspector"
 import { Timeline } from "./components/Timeline"
 import { ExportDialog } from "./components/ExportDialog"
-import { Overlays } from "./components/overlays"
+import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog"
+import { RendersDialog } from "./components/RendersDialog"
+import { openDialog, Overlays, useOpenDialog } from "./components/overlays"
 import { useEditor, useMediaDrag } from "./store/editor"
+import { listenForRenderProgress } from "./store/renders"
+import { startSession } from "./lib/session"
 import { useFileDrop, usePlaybackClock, useShortcuts } from "./hooks"
 
 const TOP_BAR = 48
@@ -15,12 +19,18 @@ const MIN_UPPER = 300
 
 export default function App() {
 
-  const [exportOpen, setExportOpen] = useState(false)
+  const dialog = useOpenDialog()
+  const closeDialog = useCallback(() => openDialog(null), [])
   const [timelineH, setTimelineH] = useState(() => Math.round((window.innerHeight - TOP_BAR) * 0.42))
   const fileOver = useFileDrop()
 
   usePlaybackClock()
   useShortcuts()
+
+  useEffect(() => {
+    startSession()
+    listenForRenderProgress()
+  }, [])
 
   const startResize = useCallback((e: React.PointerEvent) => {
 
@@ -44,7 +54,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-app">
-      <TopBar onExport={() => setExportOpen(true)} />
+      <TopBar />
       <main className="flex min-h-0 flex-1 flex-col px-2 pb-2">
         <div className="flex min-h-0 flex-1 gap-2">
           <MediaBin dropActive={fileOver} />
@@ -55,7 +65,9 @@ export default function App() {
         <Timeline height={timelineH} />
       </main>
       <DragGhost />
-      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
+      {dialog === "export" && <ExportDialog onClose={closeDialog} />}
+      {dialog === "settings" && <ProjectSettingsDialog onClose={closeDialog} />}
+      {dialog === "renders" && <RendersDialog onClose={closeDialog} />}
       <Overlays />
     </div>
   )

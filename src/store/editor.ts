@@ -1,16 +1,39 @@
 import { create } from "zustand"
-import type { Clip, ClipProps, ClipType, MediaItem, TextProps, Track, TrackKind } from "../types"
-import { FRAME, toFrame } from "../lib/time"
+import { DEFAULT_SETTINGS, type Clip, type ClipProps, type ClipType, type MediaItem, type ProjectSettings, type TextProps, type Track, type TrackKind } from "../types"
+import { frameTicks, sameFps, ticks, toFrame, type Fps } from "../lib/time"
 import { uid } from "../lib/platform"
 
 interface Snapshot {
   tracks: Track[]
   clips: Clip[]
   removedMediaIds: string[]
+  settings: ProjectSettings
 }
 
-interface EditorState {
+/** A whole project, as opened from disk or started fresh. */
+export interface ProjectDocument {
+  id: string
+  path: string | null
+  name: string
+  settings: ProjectSettings
+  media: MediaItem[]
+  tracks: Track[]
+  clips: Clip[]
+  playhead: number
+  pxPerSec: number
+  snapping: boolean
+}
+
+export interface EditorState {
+  /** Stable across renames and moves; names the autosave file. */
+  projectId: string
+  projectPath: string | null
   projectName: string
+  settings: ProjectSettings
+  /** The document as last saved, compared by reference to tell whether it changed. */
+  saved: SavedMark
+  /** Bumped when the media list changes in a way worth saving. */
+  mediaRevision: number
   media: MediaItem[]
   /** Media taken out of the project but kept so undo can bring it and its clips back. */
   removedMediaIds: string[]
@@ -30,8 +53,16 @@ interface EditorState {
   /** Clips held by Copy or Cut, ready to paste. */
   clipboard: Clip[]
 
+  /** Replace the whole project. Dirty marks it as differing from what's on disk, as a recovered project does. */
+  loadDocument: (doc: ProjectDocument, dirty?: boolean) => void
+  markSaved: (path: string, name: string) => void
+  /** Change resolution, frame rate or name. A new frame rate moves clips onto its grid. */
+  updateSettings: (name: string, settings: ProjectSettings) => void
+
   addMedia: (items: MediaItem[]) => void
   updateMedia: (id: string, patch: Partial<MediaItem>) => void
+  /** Point media at a new file, keeping every clip that uses it. */
+  relinkMedia: (id: string, patch: Partial<MediaItem>) => void
   removeMedia: (id: string) => void
   selectMedia: (id: string | null) => void
 
@@ -90,13 +121,24 @@ export interface ClipEdit {
   duration: number
 }
 
+/** The parts of a project that make it differ from what's on disk. */
+export interface SavedMark {
+  name: string
+  tracks: Track[]
+  clips: Clip[]
+  settings: ProjectSettings
+  mediaRevision: number
+}
+
 export const MIN_ZOOM = 4
 export const MAX_ZOOM = 600
 const HISTORY_LIMIT = 200
+const STILL_DURATION = ticks(5)
+const TITLE_DURATION = ticks(3)
 
 export const DEFAULT_PROPS: ClipProps = { x: 0, y: 0, scale: 100, rotation: 0, opacity: 100, volume: 100 }
 
-const defaultTracks: Track[] = [
+export const defaultTracks: Track[] = [
   { id: "v2", kind: "video", name: "V2", hidden: false, muted: false, locked: false },
   { id: "v1", kind: "video", name: "V1", hidden: false, muted: false, locked: false },
   { id: "a1", kind: "audio", name: "A1", hidden: false, muted: false, locked: false },
@@ -104,6 +146,35 @@ const defaultTracks: Track[] = [
 ]
 
 export const clipEnd = (c: Clip) => c.start + c.duration
+
+const markOf = (s: Pick<EditorState, "projectName" | "tracks" | "clips" | "settings" | "mediaRevision">): SavedMark => ({
+  name: s.projectName,
+  tracks: s.tracks,
+  clips: s.clips,
+  settings: s.settings,
+  mediaRevision: s.mediaRevision,
+})
+
+/** Whether the project differs from its last save. Undoing back to that save counts as clean. */
+export const isDirty = (s: EditorState) =>
+  s.saved.name !== s.projectName ||
+  s.saved.tracks !== s.tracks ||
+  s.saved.clips !== s.clips ||
+  s.saved.settings !== s.settings ||
+  s.saved.mediaRevision !== s.mediaRevision
+
+export const newProject = (): ProjectDocument => ({
+  id: crypto.randomUUID(),
+  path: null,
+  name: "Untitled project",
+  settings: DEFAULT_SETTINGS,
+  media: [],
+  tracks: defaultTracks,
+  clips: [],
+  playhead: 0,
+  pxPerSec: 60,
+  snapping: true,
+})
 
 /** Which kind of track a clip type lives on. Titles sit on video tracks. */
 export const trackKindFor = (type: ClipType): TrackKind => (type === "audio" ? "audio" : "video")
@@ -125,18 +196,19 @@ export const hasLinkedSelection = (s: Pick<EditorState, "clips" | "selectedClipI
   s.clips.some((c) => s.selectedClipIds.includes(c.id) && linkedWith(s.clips, c).length > 0)
 
 /** Whether b picks up exactly where a stops, looking the same, so joining them changes nothing on screen. */
-function continues(a: Clip, b: Clip, media: MediaItem[]) {
+function continues(a: Clip, b: Clip, media: MediaItem[], fps: Fps) {
+  const tolerance = frameTicks(fps) / 2
   const sameLook = JSON.stringify([a.props, a.text, !!a.audioDetached]) === JSON.stringify([b.props, b.text, !!b.audioDetached])
-  if (a.type !== b.type || a.mediaId !== b.mediaId || !sameLook || Math.abs(clipEnd(a) - b.start) > FRAME / 2) return false
+  if (a.type !== b.type || a.mediaId !== b.mediaId || !sameLook || Math.abs(clipEnd(a) - b.start) > tolerance) return false
   const timed = media.find((m) => m.id === a.mediaId)?.kind !== "image" && a.type !== "text"
-  return !timed || Math.abs(a.offset + a.duration - b.offset) <= FRAME / 2
+  return !timed || Math.abs(a.offset + a.duration - b.offset) <= tolerance
 }
 
 /**
  * Runs of clips the selection can merge. One selected clip on a track reaches
  * both neighbors; with several, only the selected ones join.
  */
-export function mergeableRuns(s: Pick<EditorState, "clips" | "media" | "tracks" | "selectedClipIds">): Clip[][] {
+export function mergeableRuns(s: Pick<EditorState, "clips" | "media" | "tracks" | "selectedClipIds" | "settings">): Clip[][] {
   const selected = new Set(s.selectedClipIds)
   const runs: Clip[][] = []
   for (const track of s.tracks) {
@@ -149,7 +221,7 @@ export function mergeableRuns(s: Pick<EditorState, "clips" | "media" | "tracks" 
     }
     for (const c of onTrack) {
       const last = run[run.length - 1]
-      if (last && continues(last, c, s.media) && (single || (selected.has(last.id) && selected.has(c.id)))) {
+      if (last && continues(last, c, s.media, s.settings.fps) && (single || (selected.has(last.id) && selected.has(c.id)))) {
         run.push(c)
       } else {
         flush()
@@ -191,7 +263,7 @@ export function overwriteRange(clips: Clip[], trackId: string, s: number, e: num
     }
     const cs = c.start
     const ce = clipEnd(c)
-    if (ce <= s + 1e-6 || cs >= e - 1e-6) {
+    if (ce <= s || cs >= e) {
       out.push(c)
     } else if (cs >= s && ce <= e) {
       // fully covered: drop it
@@ -208,32 +280,67 @@ export function overwriteRange(clips: Clip[], trackId: string, s: number, e: num
 }
 
 /** Longest a clip may run from a given source offset. Infinity for stills and titles. */
-export function maxDurationFor(clip: Clip, media: MediaItem[]): number {
+export function maxDurationFor(clip: Clip, media: MediaItem[], fps: Fps): number {
   if (!clip.mediaId) return Infinity
   const m = media.find((x) => x.id === clip.mediaId)
   if (!m || m.kind === "image") return Infinity
-  return Math.max(FRAME, m.duration - clip.offset)
+  return Math.max(frameTicks(fps), m.duration - clip.offset)
+}
+
+/** The same clips on a new frame grid: both edges snap, and none shrinks to nothing. */
+function regrid(clips: Clip[], fps: Fps): Clip[] {
+  return clips.map((c) => {
+    const start = toFrame(c.start, fps)
+    return { ...c, start, duration: Math.max(frameTicks(fps), toFrame(clipEnd(c), fps) - start) }
+  })
+}
+
+function documentState(doc: ProjectDocument) {
+  const fresh = {
+    projectId: doc.id,
+    projectPath: doc.path,
+    projectName: doc.name,
+    settings: doc.settings,
+    mediaRevision: 0,
+    media: doc.media,
+    removedMediaIds: [],
+    tracks: doc.tracks,
+    clips: doc.clips,
+    selectedClipIds: [],
+    selectedMediaId: null,
+    playhead: doc.playhead,
+    playing: false,
+    pxPerSec: doc.pxPerSec,
+    snapping: doc.snapping,
+    past: [],
+    future: [],
+  }
+  return { ...fresh, saved: markOf(fresh) }
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
-  projectName: "Untitled project",
-  media: [],
-  removedMediaIds: [],
-  tracks: defaultTracks,
-  clips: [],
-  selectedClipIds: [],
-  selectedMediaId: null,
-  playhead: 0,
-  playing: false,
-  pxPerSec: 60,
-  snapping: true,
+  ...documentState(newProject()),
   showGuides: false,
-  past: [],
-  future: [],
   clipboard: [],
 
-  addMedia: (items) => set((s) => ({ media: [...s.media, ...items] })),
+  loadDocument: (doc, dirty) => {
+    const state = documentState(doc)
+    set({ ...state, saved: dirty ? { ...state.saved, mediaRevision: -1 } : state.saved })
+  },
+  markSaved: (path, name) => set((s) => ({ projectPath: path, projectName: name, saved: markOf({ ...s, projectName: name }) })),
+  updateSettings: (name, settings) => {
+    const { settings: old, projectName } = get()
+    const changed = old.width !== settings.width || old.height !== settings.height || !sameFps(old.fps, settings.fps)
+    if (changed) {
+      get().checkpoint()
+      set((s) => ({ settings, clips: sameFps(old.fps, settings.fps) ? s.clips : regrid(s.clips, settings.fps), playhead: toFrame(s.playhead, settings.fps) }))
+    }
+    if (name !== projectName) set({ projectName: name })
+  },
+
+  addMedia: (items) => set((s) => ({ media: [...s.media, ...items], mediaRevision: s.mediaRevision + 1 })),
   updateMedia: (id, patch) => set((s) => ({ media: s.media.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
+  relinkMedia: (id, patch) => set((s) => ({ media: s.media.map((m) => (m.id === id ? { ...m, ...patch } : m)), mediaRevision: s.mediaRevision + 1 })),
   removeMedia: (id) => {
     get().checkpoint()
     set((s) => {
@@ -248,12 +355,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
   selectMedia: (id) => set({ selectedMediaId: id }),
 
-  setPlayhead: (t) => set({ playhead: Math.max(0, toFrame(t)) }),
+  setPlayhead: (t) => set((s) => ({ playhead: Math.max(0, toFrame(t, s.settings.fps)) })),
   setPlaying: (playing) => set({ playing }),
   togglePlay: () => {
-    const { playing, playhead, clips } = get()
+    const { playing, playhead, clips, settings } = get()
     const end = projectDuration(clips)
-    if (!playing && end > 0 && playhead >= end - FRAME) set({ playhead: 0 })
+    if (!playing && end > 0 && playhead >= end - frameTicks(settings.fps)) set({ playhead: 0 })
     set({ playing: !playing && end > 0 })
   },
   setZoom: (pxPerSec) => set({ pxPerSec: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pxPerSec)) }),
@@ -273,24 +380,25 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   checkpoint: () =>
     set((s) => ({
-      past: [...s.past.slice(-HISTORY_LIMIT + 1), { tracks: s.tracks, clips: s.clips, removedMediaIds: s.removedMediaIds }],
+      past: [...s.past.slice(-HISTORY_LIMIT + 1), { tracks: s.tracks, clips: s.clips, removedMediaIds: s.removedMediaIds, settings: s.settings }],
       future: [],
     })),
   undo: () => {
-    const { past, tracks, clips, removedMediaIds, future } = get()
+    const { past, tracks, clips, removedMediaIds, settings, future } = get()
     const prev = past[past.length - 1]
     if (!prev) return
-    set({ ...prev, past: past.slice(0, -1), future: [{ tracks, clips, removedMediaIds }, ...future], selectedClipIds: [] })
+    set({ ...prev, past: past.slice(0, -1), future: [{ tracks, clips, removedMediaIds, settings }, ...future], selectedClipIds: [] })
   },
   redo: () => {
-    const { past, tracks, clips, removedMediaIds, future } = get()
+    const { past, tracks, clips, removedMediaIds, settings, future } = get()
     const next = future[0]
     if (!next) return
-    set({ ...next, future: future.slice(1), past: [...past, { tracks, clips, removedMediaIds }], selectedClipIds: [] })
+    set({ ...next, future: future.slice(1), past: [...past, { tracks, clips, removedMediaIds, settings }], selectedClipIds: [] })
   },
 
   insertClip: (mediaId, trackId, start) => {
-    const { media, tracks } = get()
+    const { media, tracks, settings } = get()
+    const { fps } = settings
     const track = tracks.find((t) => t.id === trackId)
     if (!track || track.locked) return
     let clip: Clip
@@ -305,9 +413,9 @@ export const useEditor = create<EditorState>((set, get) => ({
         type,
         mediaId,
         name: m.name,
-        start: toFrame(Math.max(0, start)),
+        start: toFrame(Math.max(0, start), fps),
         offset: 0,
-        duration: toFrame(m.kind === "image" ? 5 : m.duration),
+        duration: Math.max(frameTicks(fps), toFrame(m.kind === "image" ? STILL_DURATION : m.duration, fps)),
         props: { ...DEFAULT_PROPS },
       }
     } else {
@@ -317,9 +425,9 @@ export const useEditor = create<EditorState>((set, get) => ({
         trackId,
         type: "text",
         name: "Title",
-        start: toFrame(Math.max(0, start)),
+        start: toFrame(Math.max(0, start), fps),
         offset: 0,
-        duration: 3,
+        duration: toFrame(TITLE_DURATION, fps),
         props: { ...DEFAULT_PROPS },
         text: { content: "Your title here", size: 96, color: "#ffffff" },
       }
@@ -338,12 +446,13 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   applyClipEdits: (edits) => {
-    const { clips } = get()
+    const { clips, settings } = get()
+    const { fps } = settings
     const edited: Clip[] = []
     for (const e of edits) {
       const clip = clips.find((c) => c.id === e.id)
       if (!clip) continue
-      const next = { ...clip, trackId: e.trackId, start: toFrame(Math.max(0, e.start)), offset: Math.max(0, e.offset), duration: Math.max(FRAME, toFrame(e.duration)) }
+      const next = { ...clip, trackId: e.trackId, start: toFrame(Math.max(0, e.start), fps), offset: Math.max(0, e.offset), duration: Math.max(frameTicks(fps), toFrame(e.duration, fps)) }
       if (next.trackId !== clip.trackId || next.start !== clip.start || next.duration !== clip.duration) edited.push(next)
     }
     if (!edited.length) return
@@ -371,9 +480,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     })),
 
   splitAtPlayhead: () => {
-    const { clips, selectedClipIds, playhead, tracks } = get()
+    const { clips, selectedClipIds, tracks, settings } = get()
+    const playhead = toFrame(get().playhead, settings.fps)
+    const frame = frameTicks(settings.fps)
     const locked = new Set(tracks.filter((t) => t.locked).map((t) => t.id))
-    const under = clips.filter((c) => !locked.has(c.trackId) && c.start + FRAME <= playhead && clipEnd(c) - FRAME >= playhead)
+    const under = clips.filter((c) => !locked.has(c.trackId) && c.start + frame <= playhead && clipEnd(c) - frame >= playhead)
     const targets = selectedClipIds.length ? under.filter((c) => selectedClipIds.includes(c.id)) : under
     if (!targets.length) return
     get().checkpoint()
@@ -462,7 +573,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       links.set(c.id, linkId)
       const start = c.start
       const end = clipEnd(c)
-      const busy = (t: Track) => [...clips, ...detached].some((x) => x.trackId === t.id && x.start < end - 1e-6 && clipEnd(x) > start + 1e-6)
+      const busy = (t: Track) => [...clips, ...detached].some((x) => x.trackId === t.id && x.start < end && clipEnd(x) > start)
       let track = tracks.find((t) => t.kind === "audio" && !t.locked && !busy(t))
       if (!track) {
         const n = tracks.filter((t) => t.kind === "audio").length + 1
@@ -533,7 +644,7 @@ function placeCopies(get: () => EditorState, set: (patch: (s: EditorState) => Pa
     ...c,
     id: uid(),
     linkId: c.linkId && copyLink(c.linkId),
-    start: toFrame(Math.max(0, at) + (c.start - first)),
+    start: toFrame(Math.max(0, at) + (c.start - first), state.settings.fps),
     props: { ...c.props },
     text: c.text && { ...c.text },
   }))

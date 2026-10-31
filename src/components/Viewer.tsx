@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, ArrowLeft01Icon, ArrowRight01Icon, CrosshairIcon, SquareSplitHorizontalIcon, TextIcon } from "@hugeicons/core-free-icons"
 import { clipEnd, projectDuration, useEditor } from "../store/editor"
-import { FRAME, timecode } from "../lib/time"
-import { PROJECT, type Clip, type MediaItem } from "../types"
+import { audible } from "../lib/compose"
+import { frameTicks, sec, ticks, timecode } from "../lib/time"
+import type { Clip, MediaItem, ProjectSettings } from "../types"
 import type { IconSvgElement } from "@hugeicons/react"
 import { openMenu } from "./overlays"
 import { Button, Icon, Tip } from "./ui"
 
-const PRELOAD = 1.5
+const PRELOAD = ticks(1.5)
 const DRIFT = 0.25
 const CENTER_SNAP_PX = 8
 
@@ -27,6 +28,7 @@ function Stage() {
   const tracks = useEditor((s) => s.tracks)
   const media = useEditor((s) => s.media)
   const showGuides = useEditor((s) => s.showGuides)
+  const settings = useEditor((s) => s.settings)
   const frame = useRef<HTMLDivElement>(null)
   const [centered, setCentered] = useState({ x: false, y: false })
 
@@ -40,7 +42,7 @@ function Stage() {
     if (!state.selectedClipIds.includes(clip.id)) state.selectClip(clip.id)
     const { clientX, clientY } = e
     const { x: startX, y: startY } = clip.props
-    const toProject = PROJECT.width / rect.width
+    const toProject = settings.width / rect.width
     let begun = false
     const move = (ev: PointerEvent) => {
       if (!begun && Math.hypot(ev.clientX - clientX, ev.clientY - clientY) < 3) return
@@ -69,12 +71,12 @@ function Stage() {
 
   return (
     <div onContextMenu={stageMenu} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-viewer shadow-card [container-type:size]">
-      <div ref={frame} className="relative aspect-video w-[min(100cqw,100cqh*16/9)] overflow-hidden bg-black [container-type:inline-size]">
+      <div ref={frame} className="relative overflow-hidden bg-black [container-type:inline-size]" style={{ aspectRatio: `${settings.width} / ${settings.height}`, width: `min(100cqw, 100cqh * ${settings.width / settings.height})` }}>
         {videoTracks.map((t, z) =>
           clips
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => (
-              <Layer key={c.id} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={t.muted} z={z} onMove={beginMove} />
+              <Layer key={c.id} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} settings={settings} onMove={beginMove} />
             )),
         )}
         {audioTracks.map((t) =>
@@ -82,7 +84,7 @@ function Stage() {
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => {
               const m = c.mediaId ? mediaById.get(c.mediaId) : undefined
-              return m ? <SyncedMedia key={c.id} kind="audio" clip={c} media={m} active={active(c)} muted={t.muted} /> : null
+              return m ? <SyncedMedia key={c.id} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} /> : null
             }),
         )}
         {clips.length === 0 && (
@@ -110,7 +112,7 @@ function stageMenu(e: React.MouseEvent) {
   ])
 }
 
-function Layer({ clip, media, visible, muted, z, onMove }: { clip: Clip; media?: MediaItem; visible: boolean; muted: boolean; z: number; onMove: (e: React.PointerEvent, clip: Clip) => void }) {
+function Layer({ clip, media, visible, muted, z, settings, onMove }: { clip: Clip; media?: MediaItem; visible: boolean; muted: boolean; z: number; settings: ProjectSettings; onMove: (e: React.PointerEvent, clip: Clip) => void }) {
 
   const { x, y, scale, rotation, opacity } = clip.props
   const grab = (e: React.PointerEvent) => onMove(e, clip)
@@ -118,25 +120,33 @@ function Layer({ clip, media, visible, muted, z, onMove }: { clip: Clip; media?:
     zIndex: z,
     pointerEvents: visible ? "auto" : "none",
     opacity: visible ? opacity / 100 : 0,
-    transform: `translate(${(x / PROJECT.width) * 100}%, ${(y / PROJECT.height) * 100}%) scale(${scale / 100}) rotate(${rotation}deg)`,
+    transform: `translate(${(x / settings.width) * 100}%, ${(y / settings.height) * 100}%) scale(${scale / 100}) rotate(${rotation}deg)`,
   }
 
   if (clip.type === "text" && clip.text) {
     return (
       <div className="absolute inset-0 flex items-center justify-center p-[4cqw] text-center font-semibold whitespace-pre-wrap" style={{ ...style, pointerEvents: "none" }}>
-        <span onPointerDown={grab} style={{ pointerEvents: style.pointerEvents, color: clip.text.color, fontSize: `${(clip.text.size / PROJECT.width) * 100}cqw`, lineHeight: 1.1 }}>{clip.text.content}</span>
+        <span onPointerDown={grab} style={{ pointerEvents: style.pointerEvents, color: clip.text.color, fontSize: `${(clip.text.size / settings.width) * 100}cqw`, lineHeight: 1.1 }}>{clip.text.content}</span>
       </div>
     )
   }
 
   if (!media) return null
+  if (media.status === "missing") {
+
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-[#2a1214] text-h-sm text-white/80" style={{ zIndex: z, display: visible ? undefined : "none" }}>
+        Media offline: {media.name}
+      </div>
+    )
+  }
   if (media.kind === "image") {
 
     return <img src={media.src} alt="" draggable={false} onPointerDown={grab} className="absolute inset-0 h-full w-full object-contain" style={style} />
 
   }
 
-  return <SyncedMedia kind="video" clip={clip} media={media} active={visible} muted={muted || !!clip.audioDetached} style={style} onPointerDown={grab} />
+  return <SyncedMedia kind="video" clip={clip} media={media} active={visible} muted={muted} style={style} onPointerDown={grab} />
 }
 
 function SyncedMedia({ kind, clip, media, active, muted, style, onPointerDown }: { kind: "video" | "audio"; clip: Clip; media: MediaItem; active: boolean; muted: boolean; style?: React.CSSProperties; onPointerDown?: React.PointerEventHandler }) {
@@ -144,6 +154,7 @@ function SyncedMedia({ kind, clip, media, active, muted, style, onPointerDown }:
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null)
   const playhead = useEditor((s) => s.playhead)
   const playing = useEditor((s) => s.playing)
+  const fps = useEditor((s) => s.settings.fps)
 
   useEffect(() => {
 
@@ -157,13 +168,13 @@ function SyncedMedia({ kind, clip, media, active, muted, style, onPointerDown }:
     if (!active) {
 
       if (!el.paused) el.pause()
-      if (Math.abs(el.currentTime - clip.offset) > 0.05) el.currentTime = clip.offset
+      if (Math.abs(el.currentTime - sec(clip.offset)) > 0.05) el.currentTime = sec(clip.offset)
 
       return
 
     }
 
-    const target = clip.offset + (playhead - clip.start)
+    const target = sec(clip.offset + (playhead - clip.start))
 
     if (playing) {
 
@@ -179,10 +190,10 @@ function SyncedMedia({ kind, clip, media, active, muted, style, onPointerDown }:
     } else {
 
       if (!el.paused) el.pause()
-      if (Math.abs(el.currentTime - target) > FRAME / 2) el.currentTime = target
+      if (Math.abs(el.currentTime - target) > sec(frameTicks(fps)) / 2) el.currentTime = target
 
     }
-  }, [playhead, playing, active, muted, clip.offset, clip.start, clip.props.volume])
+  }, [playhead, playing, active, muted, clip.offset, clip.start, clip.props.volume, fps])
 
   if (kind === "audio") return <audio ref={ref} src={media.src} preload="auto" />
 
@@ -195,15 +206,16 @@ function Transport() {
   const playing = useEditor((s) => s.playing)
   const duration = useEditor((s) => projectDuration(s.clips))
   const showGuides = useEditor((s) => s.showGuides)
+  const fps = useEditor((s) => s.settings.fps)
   const { togglePlay, setPlayhead, setPlaying, toggleGuides } = useEditor.getState()
   const stepFrame = (dir: number) => {
     setPlaying(false)
-    setPlayhead(playhead + dir * FRAME)
+    setPlayhead(playhead + dir * frameTicks(fps))
   }
 
   return (
     <div className="flex h-12 shrink-0 items-center rounded-xl bg-surface px-4 shadow-card">
-      <span className="tnum w-28 text-body text-fg">{timecode(playhead)}</span>
+      <span className="tnum w-28 text-body text-fg">{timecode(playhead, fps)}</span>
       <div className="flex flex-1 items-center justify-center gap-0.5">
         <Tip label="Go to start" kbd="Home">
           <Button variant="quiet" aria-label="Go to start" onClick={() => setPlayhead(0)}>
@@ -235,7 +247,7 @@ function Transport() {
         <Tip label="Center guides" kbd="G">
           <Button variant="quiet" icon={CrosshairIcon} active={showGuides} onClick={toggleGuides} aria-pressed={showGuides} aria-label="Center guides" />
         </Tip>
-        <span className="tnum text-body text-muted">{timecode(duration)}</span>
+        <span className="tnum text-body text-muted">{timecode(duration, fps)}</span>
       </div>
     </div>
   )

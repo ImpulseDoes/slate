@@ -2,8 +2,10 @@ import { useEffect, useState } from "react"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { projectDuration, useEditor } from "./store/editor"
 import { importFiles, importPaths, pickAndImport } from "./lib/media"
-import { FRAME } from "./lib/time"
+import { frameTicks, ticks, TICKS } from "./lib/time"
 import { isTauri } from "./lib/platform"
+import { openProject, saveProject, saveProjectAs, startNewProject } from "./lib/session"
+import { openDialog } from "./components/overlays"
 
 export function usePlaybackClock() {
 
@@ -19,7 +21,7 @@ export function usePlaybackClock() {
 
       const { playhead, clips, setPlayhead, setPlaying } = useEditor.getState()
       const end = projectDuration(clips)
-      const next = playhead + (now - last) / 1000
+      const next = Math.round(playhead + ((now - last) / 1000) * TICKS)
 
       last = now
 
@@ -66,6 +68,26 @@ export function useShortcuts() {
         void pickAndImport()
         return
       }
+      if (mod && isTauri && key === "s") {
+        e.preventDefault()
+        void (e.shiftKey ? saveProjectAs() : saveProject())
+        return
+      }
+      if (mod && isTauri && key === "o") {
+        e.preventDefault()
+        void openProject()
+        return
+      }
+      if (mod && key === "n") {
+        e.preventDefault()
+        startNewProject()
+        return
+      }
+      if (mod && key === "e") {
+        e.preventDefault()
+        if (s.clips.length) openDialog("export")
+        return
+      }
       if (mod) {
         if (key === "l") {
           e.preventDefault()
@@ -87,7 +109,7 @@ export function useShortcuts() {
         return
       }
 
-      const step = e.shiftKey ? 1 : FRAME
+      const step = e.shiftKey ? ticks(1) : frameTicks(s.settings.fps)
       switch (e.key) {
         case " ":
           e.preventDefault()

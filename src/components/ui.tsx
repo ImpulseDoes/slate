@@ -210,6 +210,32 @@ export function NumberField({ value, onChange, onBegin, min = -Infinity, max = I
   )
 }
 
+export function Select<T extends string>({ value, options, onChange, label }: { value: T; options: { id: T; label: string; disabled?: boolean }[]; onChange: (id: T) => void; label: string }) {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+      className="h-8 w-full min-w-0 rounded-md bg-raised px-2 text-body text-fg outline-none focus-visible:outline-2 focus-visible:outline-primary"
+    >
+      {options.map((o) => (
+        <option key={o.id} value={o.id} disabled={o.disabled}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-8 items-center">
+      <span className="w-28 shrink-0 text-label">{label}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
+    </div>
+  )
+}
+
 interface ScrubProps {
   value: number
   step: number

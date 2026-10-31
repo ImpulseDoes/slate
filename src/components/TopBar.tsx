@@ -1,11 +1,49 @@
 import { useEffect, useState } from "react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { Download04Icon, LoaderPinwheelIcon, Redo02Icon, Undo02Icon } from "@hugeicons/core-free-icons"
-import { useEditor } from "../store/editor"
+import { CheckmarkCircle02Icon, Clock01Icon, Download04Icon, File01Icon, FilePlusIcon, FloppyDiskIcon, Folder01Icon, FolderOpenIcon, LoaderPinwheelIcon, Redo02Icon, Settings02Icon, Undo02Icon } from "@hugeicons/core-free-icons"
+import { isDirty, useEditor } from "../store/editor"
+import { runningRenders, useRenders } from "../store/renders"
 import { isMac, isTauri, MOD } from "../lib/platform"
+import { openProject, recentProjects, saveProject, saveProjectAs, startNewProject } from "../lib/session"
+import { openDialog, openMenuBelow, type MenuEntry } from "./overlays"
 import { Button, StatusTag, Tip } from "./ui"
 
-export function TopBar({ onExport }: { onExport: () => void }) {
+function fileMenu(e: React.MouseEvent) {
+  const hasClips = useEditor.getState().clips.length > 0
+  const recent = recentProjects().map((r): MenuEntry => ({ label: r.name, icon: Clock01Icon, onSelect: () => void openProject(r.path) }))
+  openMenuBelow(e, [
+    { label: "New project", icon: FilePlusIcon, kbd: `${MOD} N`, onSelect: startNewProject },
+    { label: "Open…", icon: FolderOpenIcon, kbd: `${MOD} O`, disabled: !isTauri, onSelect: () => void openProject() },
+    "divider",
+    { label: "Save", icon: FloppyDiskIcon, kbd: `${MOD} S`, disabled: !isTauri, onSelect: () => void saveProject() },
+    { label: "Save as…", icon: Folder01Icon, kbd: `${MOD} ⇧ S`, disabled: !isTauri, onSelect: () => void saveProjectAs() },
+    "divider",
+    { label: "Project settings…", icon: Settings02Icon, onSelect: () => openDialog("settings") },
+    { label: "Export…", icon: Download04Icon, kbd: `${MOD} E`, disabled: !hasClips, onSelect: () => openDialog("export") },
+    ...(recent.length ? (["divider", ...recent] as MenuEntry[]) : []),
+  ])
+}
+
+function SaveState() {
+  const dirty = useEditor(isDirty)
+  const saved = useEditor((s) => !!s.projectPath)
+  if (dirty) return <StatusTag tone="progress" icon={LoaderPinwheelIcon}>Unsaved</StatusTag>
+  return saved ? <StatusTag icon={CheckmarkCircle02Icon}>Saved</StatusTag> : <StatusTag icon={File01Icon}>Draft</StatusTag>
+}
+
+function ExportProgress() {
+  const running = useRenders(runningRenders)
+  const progress = useRenders((s) => s.jobs.find((j) => j.status === "running")?.progress ?? 0)
+  const any = useRenders((s) => s.jobs.length > 0)
+  if (!any) return null
+  return (
+    <Button variant="quiet" onClick={() => openDialog("renders")}>
+      <span className="tnum">{running ? `Exporting ${Math.round(progress * 100)}%` : "Exports"}</span>
+    </Button>
+  )
+}
+
+export function TopBar() {
   const projectName = useEditor((s) => s.projectName)
   const canUndo = useEditor((s) => s.past.length > 0)
   const canRedo = useEditor((s) => s.future.length > 0)
@@ -16,12 +54,13 @@ export function TopBar({ onExport }: { onExport: () => void }) {
   return (
     <header data-tauri-drag-region className="flex h-12 shrink-0 items-center gap-3 pr-0 select-none" style={{ paddingLeft: isMac && isTauri ? 80 : 16 }}>
       <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2">
+        <Button variant="quiet" onClick={fileMenu}>
+          File
+        </Button>
         <span data-tauri-drag-region className="truncate text-h-sm font-semibold text-fg">
           {projectName}
         </span>
-        <StatusTag tone="progress" icon={LoaderPinwheelIcon}>
-          Draft
-        </StatusTag>
+        <SaveState />
         <div className="ml-2 flex items-center gap-0.5">
           <Tip label="Undo" kbd={`${MOD} Z`} side="bottom">
             <Button variant="quiet" icon={Undo02Icon} onClick={undo} disabled={!canUndo} aria-label="Undo" />
@@ -33,7 +72,8 @@ export function TopBar({ onExport }: { onExport: () => void }) {
       </div>
 
       <div className={`flex items-center gap-1.5 ${isMac || !isTauri ? "pr-2" : ""}`}>
-        <Button variant="primary" icon={Download04Icon} onClick={onExport} disabled={!hasClips}>
+        <ExportProgress />
+        <Button variant="primary" icon={Download04Icon} onClick={() => openDialog("export")} disabled={!hasClips}>
           Export
         </Button>
       </div>

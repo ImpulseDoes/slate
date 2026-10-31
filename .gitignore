@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 /breach
+# Fetched by scripts/fetch-ffmpeg.ts
+/src-tauri/binaries
+/tests

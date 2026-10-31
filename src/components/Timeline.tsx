@@ -25,7 +25,7 @@ import {
   ZoomOutAreaIcon,
 } from "@hugeicons/core-free-icons"
 import { canDetachAudio, canLinkSelection, clipEnd, clipTypeForMedia, detachableClips, hasLinkedSelection, linkedWith, maxDurationFor, mergeableRuns, MAX_ZOOM, MIN_ZOOM, projectDuration, trackKindFor, useEditor, useMediaDrag } from "../store/editor"
-import { FRAME, rulerLabel, toFrame } from "../lib/time"
+import { frameTicks, rulerLabel, sec, ticks, TICKS, toFrame, type Fps } from "../lib/time"
 import { PEAKS_PER_SECOND, type Clip, type MediaItem, type Track } from "../types"
 import type { ClipEdit } from "../store/editor"
 import { MOD } from "../lib/platform"
@@ -38,7 +38,8 @@ const TRACK_H = { video: 60, audio: 44 } as const
 const CLIP_LABEL_H = 18
 const SNAP_PX = 8
 /** Extra room after the last clip so there's always somewhere to drop. */
-const TAIL_SECONDS = 30
+const TAIL = ticks(30)
+const STILL_DROP = ticks(5)
 
 const CLIP_STYLE = {
   video: "bg-clip-video text-clip-video-strong",
@@ -53,8 +54,10 @@ export function Timeline({ height }: { height: number }) {
   const tracks = useEditor((s) => s.tracks)
   const clips = useEditor((s) => s.clips)
   const media = useEditor((s) => s.media)
-  const pps = useEditor((s) => s.pxPerSec)
+  /** Pixels per tick: timeline positions are ticks, so this turns them straight into layout. */
+  const ppt = useEditor((s) => s.pxPerSec) / TICKS
   const selected = useEditor((s) => s.selectedClipIds)
+  const fps = useEditor((s) => s.settings.fps)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState({ left: 0, width: 1000 })
@@ -62,8 +65,8 @@ export function Timeline({ height }: { height: number }) {
 
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const duration = projectDuration(clips)
-  const contentSeconds = Math.max(duration + TAIL_SECONDS, (view.width - HEADER_W) / pps)
-  const contentW = Math.ceil(contentSeconds * pps)
+  const contentTicks = Math.max(duration + TAIL, (view.width - HEADER_W) / ppt)
+  const contentW = Math.ceil(contentTicks * ppt)
 
   useScrollSync(scrollRef, setView)
   useWheelZoom(scrollRef)
@@ -74,14 +77,14 @@ export function Timeline({ height }: { height: number }) {
     const { clips: all, setZoom } = useEditor.getState()
     const end = projectDuration(all)
     if (!el || end <= 0) return
-    setZoom((el.clientWidth - HEADER_W - 32) / end)
+    setZoom((el.clientWidth - HEADER_W - 32) / sec(end))
     el.scrollLeft = 0
   }
 
   /** Scrub the playhead from a pointer event on the ruler or an empty lane. */
   const scrub = (e: React.PointerEvent, el: HTMLElement) => {
     const rect = el.getBoundingClientRect()
-    const at = (x: number) => useEditor.getState().setPlayhead((x - rect.left) / useEditor.getState().pxPerSec)
+    const at = (x: number) => useEditor.getState().setPlayhead(((x - rect.left) / useEditor.getState().pxPerSec) * TICKS)
     useEditor.getState().setPlaying(false)
     at(e.clientX)
     el.setPointerCapture(e.pointerId)
@@ -105,7 +108,9 @@ export function Timeline({ height }: { height: number }) {
     else if (e.shiftKey) state.selectClip(clip.id, "add")
     else if (!state.selectedClipIds.includes(clip.id)) state.selectClip(clip.id)
 
-    const { clips: all, selectedClipIds, tracks: allTracks, media } = useEditor.getState()
+    const { clips: all, selectedClipIds, tracks: allTracks, media, settings } = useEditor.getState()
+    const { fps } = settings
+    const frame = frameTicks(fps)
     const locked = new Set(allTracks.filter((t) => t.locked).map((t) => t.id))
     const linked = linkedWith(all, clip)
     const others = solo ? [] : all.filter((c) => c.id !== clip.id && !locked.has(c.trackId) && (selectedClipIds.includes(c.id) || linked.includes(c)))
@@ -113,16 +118,16 @@ export function Timeline({ height }: { height: number }) {
     const earliest = Math.min(...group.map((c) => c.start))
     // A trim takes along only the clips whose edge lines up with the one being dragged.
     const edge = mode === "trim-l" ? (c: Clip) => c.start : clipEnd
-    const trimmed = group.filter((c) => Math.abs(edge(c) - edge(clip)) < FRAME / 2)
-    const earliestStart = Math.max(0, ...trimmed.map((c) => (maxDurationFor(c, media) === Infinity ? 0 : c.start - c.offset)))
-    const latestStart = Math.min(...trimmed.map((c) => clipEnd(c) - FRAME))
-    const earliestEnd = Math.max(...trimmed.map((c) => c.start + FRAME))
-    const latestEnd = Math.min(...trimmed.map((c) => c.start + maxDurationFor(c, media)))
+    const trimmed = group.filter((c) => Math.abs(edge(c) - edge(clip)) < frame / 2)
+    const earliestStart = Math.max(0, ...trimmed.map((c) => (maxDurationFor(c, media, fps) === Infinity ? 0 : c.start - c.offset)))
+    const latestStart = Math.min(...trimmed.map((c) => clipEnd(c) - frame))
+    const earliestEnd = Math.max(...trimmed.map((c) => c.start + frame))
+    const latestEnd = Math.min(...trimmed.map((c) => c.start + maxDurationFor(c, media, fps)))
     const toEdit = (c: Clip): ClipEdit => ({ id: c.id, trackId: c.trackId, start: c.start, offset: c.offset, duration: c.duration })
 
     // Listen on window: moving to another track remounts the clip element.
     const startX = e.clientX
-    const scale = state.pxPerSec
+    const scale = state.pxPerSec / TICKS
     const snapPoints = state.snapping
       ? [0, state.playhead, ...all.filter((c) => !group.includes(c)).flatMap((c) => [c.start, clipEnd(c)])]
       : []
@@ -158,13 +163,13 @@ export function Timeline({ height }: { height: number }) {
         const lane = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-track-id]")
         const target = lane && useEditor.getState().tracks.find((t) => t.id === lane.dataset.trackId)
         if (target && !target.locked && target.kind === trackKindFor(clip.type)) trackId = target.id
-        const shift = toFrame(Math.max(lowest, start)) - clip.start
-        current = group.map((c) => ({ ...toEdit(c), start: toFrame(c.start + shift), trackId: c.id === clip.id ? trackId : c.trackId }))
+        const shift = toFrame(Math.max(lowest, start), fps) - clip.start
+        current = group.map((c) => ({ ...toEdit(c), start: toFrame(c.start + shift, fps), trackId: c.id === clip.id ? trackId : c.trackId }))
       } else if (mode === "trim-l") {
-        const shift = toFrame(Math.min(latestStart, Math.max(earliestStart, snap(clip.start + dt)))) - clip.start
+        const shift = toFrame(Math.min(latestStart, Math.max(earliestStart, snap(clip.start + dt))), fps) - clip.start
         current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.max(0, c.offset + shift), duration: c.duration - shift }))
       } else {
-        const change = toFrame(Math.min(latestEnd, Math.max(earliestEnd, snap(clipEnd(clip) + dt)))) - clipEnd(clip)
+        const change = toFrame(Math.min(latestEnd, Math.max(earliestEnd, snap(clipEnd(clip) + dt))), fps) - clipEnd(clip)
         current = trimmed.map((c) => ({ ...toEdit(c), duration: c.duration + change }))
       }
       setDraft(current)
@@ -189,7 +194,7 @@ export function Timeline({ height }: { height: number }) {
       <Toolbar onFit={fit} />
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
         <div className="relative min-h-full" style={{ width: HEADER_W + contentW }}>
-          <Ruler pps={pps} width={contentW} view={view} selection={selectionRange(clips, selected)} onScrub={scrub} />
+          <Ruler ppt={ppt} fps={fps} width={contentW} view={view} selection={selectionRange(clips, selected)} onScrub={scrub} />
           {tracks.map((t) => (
             <div key={t.id} className="flex border-b border-border" style={{ height: TRACK_H[t.kind] }}>
               <TrackHeader track={t} onContextMenu={(e) => trackMenu(e, t)} />
@@ -202,7 +207,7 @@ export function Timeline({ height }: { height: number }) {
                   useEditor.getState().clearSelection()
                   scrub(e, e.currentTarget)
                 }}
-                onContextMenu={(e) => laneMenu(e, t, (e.clientX - e.currentTarget.getBoundingClientRect().left) / pps, fit)}
+                onContextMenu={(e) => laneMenu(e, t, (e.clientX - e.currentTarget.getBoundingClientRect().left) / ppt, fit)}
               >
                 {shown
                   .filter((c) => c.trackId === t.id)
@@ -211,7 +216,7 @@ export function Timeline({ height }: { height: number }) {
                       key={c.id}
                       clip={c}
                       media={c.mediaId ? mediaById.get(c.mediaId) : undefined}
-                      pps={pps}
+                      ppt={ppt}
                       height={TRACK_H[t.kind]}
                       selected={selected.includes(c.id)}
                       dragging={!!draft?.some((d) => d.id === c.id)}
@@ -220,11 +225,11 @@ export function Timeline({ height }: { height: number }) {
                       onDragStart={beginClipDrag}
                     />
                   ))}
-                <DropPreview track={t} pps={pps} />
+                <DropPreview track={t} ppt={ppt} />
               </div>
             </div>
           ))}
-          <Playhead pps={pps} />
+          <Playhead ppt={ppt} />
         </div>
       </div>
     </section>
@@ -374,45 +379,45 @@ function Toolbar({ onFit }: { onFit: () => void }) {
   )
 }
 
-const TICK_STEPS = [FRAME, 2 * FRAME, 5 * FRAME, 10 * FRAME, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800]
+const SECOND_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800].map(ticks)
 
-function Ruler({ pps, width, view, selection, onScrub }: { pps: number; width: number; view: { left: number; width: number }; selection: [number, number] | null; onScrub: (e: React.PointerEvent, el: HTMLElement) => void }) {
-  const major = TICK_STEPS.find((s) => s * pps >= 72) ?? 1800
-  const minor = major / (major * pps >= 100 ? 5 : 2)
-  const from = Math.max(0, Math.floor((view.left - HEADER_W) / pps / major) * major)
-  const to = Math.min(width / pps, (view.left + view.width) / pps)
-  const ticks: { t: number; major: boolean }[] = []
-  for (let t = from; t <= to + major; t += minor) {
-    const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6
-    ticks.push({ t, major: isMajor })
-  }
-  const withFrames = major < 1
+function Ruler({ ppt, fps, width, view, selection, onScrub }: { ppt: number; fps: Fps; width: number; view: { left: number; width: number }; selection: [number, number] | null; onScrub: (e: React.PointerEvent, el: HTMLElement) => void }) {
+  const frame = frameTicks(fps)
+  const steps = [frame, 2 * frame, 5 * frame, 10 * frame, ...SECOND_STEPS]
+  const major = steps.find((s) => s * ppt >= 72) ?? steps[steps.length - 1]
+  const divisions = major * ppt >= 100 ? 5 : 2
+  const minor = major / divisions
+  const from = Math.max(0, Math.floor((view.left - HEADER_W) / ppt / major) * major)
+  const to = Math.min(width / ppt, (view.left + view.width) / ppt)
+  const marks: { t: number; major: boolean }[] = []
+  for (let i = 0; from + i * minor <= to + major; i++) marks.push({ t: from + i * minor, major: i % divisions === 0 })
+  const withFrames = major < TICKS
 
   return (
     <div className="sticky top-0 z-30 flex bg-surface" style={{ height: RULER_H }}>
       <div className="sticky left-0 z-40 shrink-0 border-r border-b border-border bg-surface" style={{ width: HEADER_W }} />
       <div className="relative shrink-0 overflow-hidden border-b border-border" style={{ width }} onPointerDown={(e) => e.button === 0 && onScrub(e, e.currentTarget)}>
-        {selection && <div className="absolute top-0 bottom-0 bg-primary-highlight" style={{ left: selection[0] * pps, width: (selection[1] - selection[0]) * pps }} />}
-        {ticks.map(({ t, major: isMajor }) => (
-          <div key={t.toFixed(4)} className="absolute bottom-0" style={{ left: t * pps }}>
+        {selection && <div className="absolute top-0 bottom-0 bg-primary-highlight" style={{ left: selection[0] * ppt, width: (selection[1] - selection[0]) * ppt }} />}
+        {marks.map(({ t, major: isMajor }) => (
+          <div key={t} className="absolute bottom-0" style={{ left: t * ppt }}>
             <div className={`w-px ${isMajor ? "h-2 bg-muted" : "h-1 bg-border"}`} />
-            {isMajor && <span className="tnum absolute bottom-2.5 left-1 text-caps whitespace-nowrap text-muted">{rulerLabel(t, withFrames)}</span>}
+            {isMajor && <span className="tnum absolute bottom-2.5 left-1 text-caps whitespace-nowrap text-muted">{rulerLabel(t, fps, withFrames)}</span>}
           </div>
         ))}
-        <PlayheadHandle pps={pps} />
+        <PlayheadHandle ppt={ppt} />
       </div>
     </div>
   )
 }
 
-function PlayheadHandle({ pps }: { pps: number }) {
+function PlayheadHandle({ ppt }: { ppt: number }) {
   const playhead = useEditor((s) => s.playhead)
-  return <div className="pointer-events-none absolute bottom-0 z-10 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-primary ring-2 ring-surface" style={{ left: playhead * pps + 1 }} />
+  return <div className="pointer-events-none absolute bottom-0 z-10 h-3 w-3 -translate-x-1/2 translate-y-1/2 rounded-full bg-primary ring-2 ring-surface" style={{ left: playhead * ppt + 1 }} />
 }
 
-function Playhead({ pps }: { pps: number }) {
+function Playhead({ ppt }: { ppt: number }) {
   const playhead = useEditor((s) => s.playhead)
-  return <div className="pointer-events-none absolute bottom-0 z-10 w-0.5 bg-primary" style={{ left: HEADER_W + playhead * pps, top: RULER_H }} />
+  return <div className="pointer-events-none absolute bottom-0 z-10 w-0.5 bg-primary" style={{ left: HEADER_W + playhead * ppt, top: RULER_H }} />
 }
 
 function TrackHeader({ track, onContextMenu }: { track: Track; onContextMenu: (e: React.MouseEvent) => void }) {
@@ -449,7 +454,7 @@ function TrackHeader({ track, onContextMenu }: { track: Track; onContextMenu: (e
 interface ClipViewProps {
   clip: Clip
   media?: MediaItem
-  pps: number
+  ppt: number
   height: number
   selected: boolean
   dragging: boolean
@@ -458,14 +463,15 @@ interface ClipViewProps {
   onDragStart: (e: React.PointerEvent, clip: Clip, mode: DragMode) => void
 }
 
-const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dragging, linked, locked, onDragStart }: ClipViewProps) {
-  const left = clip.start * pps
-  const width = Math.max(2, clip.duration * pps)
+const ClipView = memo(function ClipView({ clip, media, ppt, height, selected, dragging, linked, locked, onDragStart }: ClipViewProps) {
+  const left = clip.start * ppt
+  const width = Math.max(2, clip.duration * ppt)
+  const offline = media?.status === "missing"
   const handles = !locked && width > 14
 
   return (
     <div
-      className={`group absolute overflow-hidden rounded-sm ${CLIP_STYLE[media?.kind === "image" ? "image" : clip.type]} ${selected ? "z-[5] outline-2 outline-offset-1 outline-primary" : ""} ${dragging ? "z-[6] opacity-90 shadow-float" : ""} ${locked ? "cursor-not-allowed" : ""}`}
+      className={`group absolute overflow-hidden rounded-sm ${offline ? "bg-danger-soft text-error" : CLIP_STYLE[media?.kind === "image" ? "image" : clip.type]} ${selected ? "z-[5] outline-2 outline-offset-1 outline-primary" : ""} ${dragging ? "z-[6] opacity-90 shadow-float" : ""} ${locked ? "cursor-not-allowed" : ""}`}
       style={{ left, width, top: 2, height: height - 4 }}
       onPointerDown={(e) => onDragStart(e, clip, "move")}
       onContextMenu={(e) => clipMenu(e, clip, locked)}
@@ -473,10 +479,10 @@ const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dr
     >
       <div className="flex items-center gap-1 px-2 text-small font-semibold" style={{ height: CLIP_LABEL_H }}>
         {linked && <Icon icon={Link01Icon} size={12} className="shrink-0" />}
-        <span className="truncate">{clip.name}</span>
+        <span className="truncate">{offline ? `Offline: ${clip.name}` : clip.name}</span>
       </div>
       <div className="relative overflow-hidden" style={{ height: height - 4 - CLIP_LABEL_H }}>
-        {clip.type === "video" && media && <Filmstrip clip={clip} media={media} pps={pps} width={width} height={height - 4 - CLIP_LABEL_H} />}
+        {clip.type === "video" && media && <Filmstrip clip={clip} media={media} ppt={ppt} width={width} height={height - 4 - CLIP_LABEL_H} />}
         {clip.type === "audio" && media?.peaks && <Waveform clip={clip} peaks={media.peaks} width={width} />}
         {clip.type === "text" && clip.text && <div className="truncate px-2 text-small opacity-80">{clip.text.content}</div>}
       </div>
@@ -490,33 +496,47 @@ const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dr
   )
 })
 
-/** Thumbnails across the clip, each tile showing the frame closest to its source time. */
-function Filmstrip({ clip, media, pps, width, height }: { clip: Clip; media: MediaItem; pps: number; width: number; height: number }) {
+function Filmstrip({ clip, media, ppt, width, height }: { clip: Clip; media: MediaItem; ppt: number; width: number; height: number }) {
+
   if (!media.frames.length || height < 8) return null
+
   const aspect = media.width && media.height ? media.width / media.height : 16 / 9
   const tileW = Math.max(16, height * aspect)
   const count = Math.min(400, Math.ceil(width / tileW))
   const tiles = []
+
   for (let i = 0; i < count; i++) {
+
     let src = media.frames[0]
+
     if (media.kind === "video" && media.duration > 0) {
-      const t = clip.offset + (i * tileW + tileW / 2) / pps
+
+      const t = clip.offset + (i * tileW + tileW / 2) / ppt
+
       const idx = Math.min(media.frames.length - 1, Math.max(0, Math.floor((t / media.duration) * media.frames.length)))
+
       src = media.frames[idx]
+
     }
     tiles.push(<div key={i} className="h-full shrink-0 bg-cover bg-center" style={{ width: tileW, backgroundImage: `url(${src})` }} />)
   }
+
   return <div className="flex h-full">{tiles}</div>
 }
 
 function Waveform({ clip, peaks, width }: { clip: Clip; peaks: number[]; width: number }) {
+
   const path = useMemo(() => {
-    const from = Math.floor(clip.offset * PEAKS_PER_SECOND)
-    const to = Math.min(peaks.length, Math.ceil((clip.offset + clip.duration) * PEAKS_PER_SECOND))
+
+    const from = Math.floor(sec(clip.offset) * PEAKS_PER_SECOND)
+    const to = Math.min(peaks.length, Math.ceil(sec(clip.offset + clip.duration) * PEAKS_PER_SECOND))
     const bars = Math.max(1, Math.min(to - from, Math.floor(width / 2)))
     const per = (to - from) / bars
+
     let d = ""
+
     for (let i = 0; i < bars; i++) {
+
       let p = 0
       const a = from + Math.floor(i * per)
       const b = Math.max(a + 1, from + Math.floor((i + 1) * per))
@@ -524,6 +544,7 @@ function Waveform({ clip, peaks, width }: { clip: Clip; peaks: number[]; width: 
       const h = Math.max(0.04, p) * 0.5
       d += `M${i + 0.5} ${0.5 - h}V${0.5 + h}`
     }
+
     return { d, bars }
   }, [clip.offset, clip.duration, peaks, width])
   return (
@@ -533,28 +554,31 @@ function Waveform({ clip, peaks, width }: { clip: Clip; peaks: number[]; width: 
   )
 }
 
-/** Where a media item dragged from the bin would land on this track. */
-function DropPreview({ track, pps }: { track: Track; pps: number }) {
+function DropPreview({ track, ppt }: { track: Track; ppt: number }) {
+
   const drag = useMediaDrag((s) => s.drag)
   const media = useEditor((s) => (drag ? s.media.find((m) => m.id === drag.mediaId) : undefined))
   const ref = useRef<HTMLDivElement>(null)
   const [left, setLeft] = useState<number | null>(null)
 
   useEffect(() => {
+
     const laneEl = ref.current?.parentElement
+
     if (!drag || !media || !laneEl || track.locked || trackKindFor(clipTypeForMedia(media)) !== track.kind) return setLeft(null)
     const hit = document.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>("[data-track-id]")
     if (hit !== laneEl) return setLeft(null)
     setLeft(Math.max(0, drag.x - laneEl.getBoundingClientRect().left))
   }, [drag, media, track])
 
-  const dur = media ? (media.kind === "image" ? 5 : media.duration) : 0
+  const dur = media ? (media.kind === "image" ? STILL_DROP : media.duration) : 0
+
   return (
     <div ref={ref} className="contents">
       {left !== null && media && (
         <div
           className={`pointer-events-none absolute rounded-sm opacity-70 ${CLIP_STYLE[media.kind]}`}
-          style={{ left, width: Math.max(4, dur * pps), top: 2, bottom: 2 }}
+          style={{ left, width: Math.max(4, dur * ppt), top: 2, bottom: 2 }}
         />
       )}
     </div>
@@ -563,12 +587,18 @@ function DropPreview({ track, pps }: { track: Track; pps: number }) {
 
 function useScrollSync(ref: React.RefObject<HTMLDivElement | null>, set: (v: { left: number; width: number }) => void) {
   useEffect(() => {
+
     const el = ref.current
+
     if (!el) return
+
     const update = () => set({ left: el.scrollLeft, width: el.clientWidth })
+
     update()
     el.addEventListener("scroll", update, { passive: true })
+
     const ro = new ResizeObserver(update)
+
     ro.observe(el)
     return () => {
       el.removeEventListener("scroll", update)
@@ -577,36 +607,50 @@ function useScrollSync(ref: React.RefObject<HTMLDivElement | null>, set: (v: { l
   }, [ref, set])
 }
 
-/** Ctrl/⌘ + wheel zooms around the pointer; plain wheel scrolls tracks, Shift + wheel scrolls time. */
 function useWheelZoom(ref: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
+
     const el = ref.current
+
     if (!el) return
+
     const onWheel = (e: WheelEvent) => {
+
       if (!(e.ctrlKey || e.metaKey)) return
+
       e.preventDefault()
+
       const { pxPerSec, setZoom } = useEditor.getState()
       const x = e.clientX - el.getBoundingClientRect().left - HEADER_W + el.scrollLeft
-      const t = x / pxPerSec
+      const seconds = x / pxPerSec
+
       setZoom(pxPerSec * Math.exp(-e.deltaY * 0.0015))
+
       const next = useEditor.getState().pxPerSec
-      el.scrollLeft += t * next - x
+
+      el.scrollLeft += seconds * next - x
     }
     el.addEventListener("wheel", onWheel, { passive: false })
     return () => el.removeEventListener("wheel", onWheel)
   }, [ref])
 }
 
-/** Page the view along with the playhead during playback. */
 function useFollowPlayhead(ref: React.RefObject<HTMLDivElement | null>, view: { left: number; width: number }) {
+
   const playing = useEditor((s) => s.playing)
   const playhead = useEditor((s) => s.playhead)
   const pps = useEditor((s) => s.pxPerSec)
+
   useEffect(() => {
+
     const el = ref.current
+
     if (!el || !playing) return
-    const x = playhead * pps
+
+    const x = sec(playhead) * pps
     const visible = view.width - HEADER_W
+
     if (x > view.left + visible - 24 || x < view.left) el.scrollLeft = Math.max(0, x - 24)
+
   }, [ref, playing, playhead, pps, view])
 }

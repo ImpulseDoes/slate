@@ -28,9 +28,41 @@ interface ConfirmState {
   body: string
   action: string
   onConfirm: () => void
+  /** Danger by default. Primary suits an action that loses nothing. */
+  tone?: "danger" | "primary"
+  cancelLabel?: string
+  onCancel?: () => void
+  /** A third way out, such as closing without saving. */
+  alternate?: { label: string; onSelect: () => void }
 }
 
-const useOverlays = create<{ menu: MenuState | null; confirm: ConfirmState | null }>(() => ({ menu: null, confirm: null }))
+export type DialogName = "export" | "settings" | "renders"
+
+interface Notice {
+  id: number
+  text: string
+  tone: "info" | "error"
+}
+
+const useOverlays = create<{ menu: MenuState | null; confirm: ConfirmState | null; dialog: DialogName | null; notices: Notice[] }>(() => ({ menu: null, confirm: null, dialog: null, notices: [] }))
+
+const NOTICE_MS = 7000
+let noticeId = 0
+
+export const useOpenDialog = () => useOverlays((s) => s.dialog)
+export const openDialog = (dialog: DialogName | null) => useOverlays.setState({ dialog })
+
+export function notify(text: string, tone: Notice["tone"] = "info") {
+  const id = ++noticeId
+  useOverlays.setState((s) => ({ notices: [...s.notices, { id, text, tone }] }))
+  setTimeout(() => useOverlays.setState((s) => ({ notices: s.notices.filter((n) => n.id !== id) })), NOTICE_MS)
+}
+
+/** Open a menu just below a button rather than at the pointer. */
+export function openMenuBelow(e: React.MouseEvent, entries: MenuEntry[]) {
+  const r = e.currentTarget.getBoundingClientRect()
+  useOverlays.setState({ menu: { x: r.left, y: r.bottom + 4, entries } })
+}
 
 export function openMenu(e: React.MouseEvent, entries: MenuEntry[]) {
   e.preventDefault()
@@ -65,7 +97,23 @@ export function Overlays() {
     <>
       {menu && <ContextMenu key={`${menu.x},${menu.y}`} {...menu} />}
       {confirm && <ConfirmDialog {...confirm} onClose={() => useOverlays.setState({ confirm: null })} />}
+      <Notices />
     </>
+  )
+}
+
+function Notices() {
+  const notices = useOverlays((s) => s.notices)
+  if (!notices.length) return null
+  return createPortal(
+    <div className="pointer-events-none fixed bottom-4 left-1/2 z-[80] flex -translate-x-1/2 flex-col items-center gap-2">
+      {notices.map((n) => (
+        <div key={n.id} role="status" className={`max-w-[560px] rounded-md px-3 py-2 text-body shadow-float ${n.tone === "error" ? "bg-error text-white" : "bg-tooltip text-white"}`}>
+          {n.text}
+        </div>
+      ))}
+    </div>,
+    document.body,
   )
 }
 
@@ -140,7 +188,7 @@ function ContextMenu({ x, y, entries }: MenuState) {
           <div key={i} role="separator" className="mx-2 my-1.5 h-px bg-border" />
         ) : (
           <button
-            key={entry.label}
+            key={i}
             role="menuitem"
             disabled={entry.disabled}
             onClick={() => {
@@ -188,7 +236,7 @@ export function Modal({ title, labelId, onClose, footer, children, width = 400, 
   )
 }
 
-function ConfirmDialog({ title, body, action, onConfirm, onClose }: ConfirmState & { onClose: () => void }) {
+function ConfirmDialog({ title, body, action, onConfirm, onClose, tone = "danger", cancelLabel = "Cancel", onCancel, alternate }: ConfirmState & { onClose: () => void }) {
   return (
     <Modal
       title={title}
@@ -196,10 +244,28 @@ function ConfirmDialog({ title, body, action, onConfirm, onClose }: ConfirmState
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          {alternate && (
+            <Button
+              className="mr-auto"
+              onClick={() => {
+                onClose()
+                alternate.onSelect()
+              }}
+            >
+              {alternate.label}
+            </Button>
+          )}
           <Button
-            variant="danger"
-            icon={Delete02Icon}
+            onClick={() => {
+              onClose()
+              onCancel?.()
+            }}
+          >
+            {cancelLabel}
+          </Button>
+          <Button
+            variant={tone}
+            icon={tone === "danger" ? Delete02Icon : undefined}
             autoFocus
             onClick={() => {
               onClose()
