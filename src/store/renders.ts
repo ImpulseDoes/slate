@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
 import { create } from "zustand"
-import type { RenderPlan } from "../lib/render"
 import { uid } from "../lib/platform"
+import type { RenderPlan } from "../lib/render/plan"
 
 export type RenderStatus = "queued" | "running" | "done" | "failed" | "cancelled"
 
@@ -11,13 +11,11 @@ export interface RenderJob {
   name: string
   output: string
   status: RenderStatus
-  /** 0 to 1 across every step. */
   progress: number
   error?: string
   startedAt?: number
   finishedAt?: number
   plan: RenderPlan
-  /** Title images, written beside the plan's own files. */
   images: { name: string; bytes: number[] }[]
 }
 
@@ -25,14 +23,14 @@ interface RendersState {
   jobs: RenderJob[]
   enqueue: (job: Pick<RenderJob, "name" | "output" | "plan" | "images">) => void
   cancel: (id: string) => void
-  /** Take a finished job off the list. */
   dismiss: (id: string) => void
   clearFinished: () => void
 }
 
-export const runningRenders = (s: Pick<RendersState, "jobs">) => s.jobs.filter((j) => j.status === "running" || j.status === "queued").length
+export const isActive = (job: RenderJob) => job.status === "running" || job.status === "queued"
 
-/** Time left in seconds, once enough has passed to judge. */
+export const runningRenders = (s: Pick<RendersState, "jobs">) => s.jobs.filter(isActive).length
+
 export function timeLeft(job: RenderJob, now: number): number | null {
   if (job.status !== "running" || !job.startedAt || job.progress < 0.02) return null
   const elapsed = now - job.startedAt
@@ -42,7 +40,7 @@ export function timeLeft(job: RenderJob, now: number): number | null {
 const patch = (id: string, change: Partial<RenderJob>) =>
   useRenders.setState((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...change } : j)) }))
 
-/** One at a time: every render already uses all the cores it can get. */
+// One at a time: every render already uses all the cores it can get.
 async function runNext() {
   const { jobs } = useRenders.getState()
   if (jobs.some((j) => j.status === "running")) return
@@ -72,7 +70,7 @@ export const useRenders = create<RendersState>((set, get) => ({
   jobs: [],
 
   enqueue: (job) => {
-    set((s) => ({ jobs: [...s.jobs, { ...job, id: uid().replace(/\W/g, ""), status: "queued", progress: 0 }] }))
+    set((s) => ({ jobs: [...s.jobs, { ...job, id: uid(), status: "queued", progress: 0 }] }))
     void runNext()
   },
 
@@ -84,7 +82,7 @@ export const useRenders = create<RendersState>((set, get) => ({
 
   dismiss: (id) => set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) })),
 
-  clearFinished: () => set((s) => ({ jobs: s.jobs.filter((j) => j.status === "running" || j.status === "queued") })),
+  clearFinished: () => set((s) => ({ jobs: s.jobs.filter(isActive) })),
 }))
 
 let listening = false

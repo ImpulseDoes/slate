@@ -1,5 +1,3 @@
-// Puts the FFmpeg that Slate renders with into src-tauri/binaries, where Tauri
-// expects a sidecar. The file is too big for git, so every checkout fetches it once.
 import { $ } from "bun"
 import { createHash } from "node:crypto"
 import { chmod, copyFile, exists, mkdir, mkdtemp, rm } from "node:fs/promises"

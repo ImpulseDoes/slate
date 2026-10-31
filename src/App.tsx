@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from "react"
-import { TopBar } from "./components/TopBar"
-import { MediaBin } from "./components/MediaBin"
-import { Viewer } from "./components/Viewer"
-import { Inspector } from "./components/Inspector"
-import { Timeline } from "./components/Timeline"
-import { ExportDialog } from "./components/ExportDialog"
-import { ProjectSettingsDialog } from "./components/ProjectSettingsDialog"
-import { RendersDialog } from "./components/RendersDialog"
-import { openDialog, Overlays, useOpenDialog } from "./components/overlays"
-import { useEditor, useMediaDrag } from "./store/editor"
+import { ExportDialog } from "./components/dialogs/ExportDialog"
+import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
+import { RendersDialog } from "./components/dialogs/RendersDialog"
+import { Inspector } from "./components/inspector/Inspector"
+import { TopBar } from "./components/layout/TopBar"
+import { DragGhost } from "./components/media/DragGhost"
+import { MediaBin } from "./components/media/MediaBin"
+import { Overlays } from "./components/overlays/Overlays"
+import { Timeline } from "./components/timeline/Timeline"
+import { Viewer } from "./components/viewer/Viewer"
+import { useFileDrop } from "./hooks/useFileDrop"
+import { usePlaybackClock } from "./hooks/usePlaybackClock"
+import { useShortcuts } from "./hooks/useShortcuts"
+import { trackPointer } from "./lib/pointer"
+import { startSession } from "./lib/project/session"
+import { openDialog, useOverlays } from "./store/overlays"
 import { listenForRenderProgress } from "./store/renders"
-import { startSession } from "./lib/session"
-import { useFileDrop, usePlaybackClock, useShortcuts } from "./hooks"
 
 const TOP_BAR = 48
 const MIN_TIMELINE = 200
@@ -19,7 +23,7 @@ const MIN_UPPER = 300
 
 export default function App() {
 
-  const dialog = useOpenDialog()
+  const dialog = useOverlays((s) => s.dialog)
   const closeDialog = useCallback(() => openDialog(null), [])
   const [timelineH, setTimelineH] = useState(() => Math.round((window.innerHeight - TOP_BAR) * 0.42))
   const fileOver = useFileDrop()
@@ -32,25 +36,15 @@ export default function App() {
     listenForRenderProgress()
   }, [])
 
-  const startResize = useCallback((e: React.PointerEvent) => {
-
-    const el = e.currentTarget as HTMLElement
-
-    el.setPointerCapture(e.pointerId)
-
+  const startResize = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
     const startY = e.clientY
     const startH = timelineH
-    const move = (ev: PointerEvent) => {
+    trackPointer((ev) => {
       const max = window.innerHeight - TOP_BAR - MIN_UPPER
       setTimelineH(Math.min(max, Math.max(MIN_TIMELINE, startH - (ev.clientY - startY))))
-    }
-    const up = () => {
-      el.removeEventListener("pointermove", move)
-      el.removeEventListener("pointerup", up)
-    }
-    el.addEventListener("pointermove", move)
-    el.addEventListener("pointerup", up)
-  }, [timelineH])
+    })
+  }
 
   return (
     <div className="flex h-screen flex-col bg-app">
@@ -69,20 +63,6 @@ export default function App() {
       {dialog === "settings" && <ProjectSettingsDialog onClose={closeDialog} />}
       {dialog === "renders" && <RendersDialog onClose={closeDialog} />}
       <Overlays />
-    </div>
-  )
-}
-
-function DragGhost() {
-
-  const drag = useMediaDrag((s) => s.drag)
-  const name = useEditor((s) => (drag ? s.media.find((m) => m.id === drag.mediaId)?.name : undefined))
-
-  if (!drag || !name) return null
-
-  return (
-    <div className="pointer-events-none fixed z-50 rounded-md bg-tooltip px-2 py-1.5 text-small text-white shadow-float" style={{ left: drag.x + 12, top: drag.y + 12 }}>
-      {name}
     </div>
   )
 }

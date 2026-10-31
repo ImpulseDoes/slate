@@ -1,6 +1,3 @@
-//! Project files and autosaves on disk. Every write lands in a temporary file
-//! first, so a crash mid-save leaves the previous version whole.
-
 use std::{
     ffi::OsString,
     fs::{self, File},
@@ -60,7 +57,6 @@ pub fn autosave_write(app: AppHandle, id: String, contents: String) -> Result<()
     write_atomic(&autosave_path(&app, &id)?, &contents).map_err(|e| e.to_string())
 }
 
-/// Every autosave left behind, newest first.
 #[tauri::command]
 pub fn autosave_list(app: AppHandle) -> Result<Vec<String>, String> {
     let mut found: Vec<(SystemTime, PathBuf)> = fs::read_dir(autosave_dir(&app)?)

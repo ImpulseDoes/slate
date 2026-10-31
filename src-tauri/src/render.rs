@@ -1,10 +1,7 @@
-//! Runs FFmpeg for an export. The frontend plans the steps; this side owns the
-//! processes, so a render keeps going while the editor does something else.
-
 use std::{
     collections::{HashMap, VecDeque},
     fs,
-    io::{BufRead, BufReader},
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -62,7 +59,6 @@ pub struct RenderJob {
     /// One FFmpeg command line per step. `{work}` stands for the job's scratch folder.
     steps: Vec<Vec<String>>,
     files: Vec<WorkFile>,
-    /// Name inside the scratch folder of what the last step produced.
     result: String,
     output: String,
 }
@@ -82,18 +78,10 @@ struct Progress<'a> {
     frame: u64,
 }
 
-/// The sidecar sits next to the app; a system FFmpeg is the fallback.
-fn ffmpeg() -> PathBuf {
+fn ffmpeg() -> Command {
     let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| Some(exe.parent()?.join(name)))
-        .filter(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from(name))
-}
-
-/// No console window, and low priority so the editor stays responsive during a render.
-fn background(command: &mut Command) -> &mut Command {
+    let sidecar = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(name))).filter(|path| path.is_file());
+    let mut command = Command::new(sidecar.unwrap_or_else(|| PathBuf::from(name)));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -102,6 +90,10 @@ fn background(command: &mut Command) -> &mut Command {
         command.creation_flags(CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY);
     }
     command
+}
+
+fn start_failed(error: io::Error) -> String {
+    format!("Couldn't start FFmpeg: {error}")
 }
 
 /// Scratch space beside the output, so the finished file only has to be renamed.
@@ -126,10 +118,14 @@ fn write_files(work: &Path, files: &[WorkFile]) -> Result<(), String> {
 
 fn run_step(app: &AppHandle, id: &str, step: usize, args: &[String], work: &Path, control: &Control) -> Result<(), String> {
     let work_text = work.to_string_lossy();
-    let mut command = Command::new(ffmpeg());
-    command.args(args.iter().map(|arg| arg.replace("{work}", &work_text)));
-    command.current_dir(work).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = background(&mut command).spawn().map_err(|e| format!("Couldn't start FFmpeg: {e}"))?;
+    let mut child = ffmpeg()
+        .args(args.iter().map(|arg| arg.replace("{work}", &work_text)))
+        .current_dir(work)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(start_failed)?;
     let stdout = child.stdout.take().ok_or("FFmpeg has no output pipe.")?;
     let stderr = child.stderr.take().ok_or("FFmpeg has no error pipe.")?;
     *control.child.lock().map_err(|e| e.to_string())? = Some(child);
@@ -205,13 +201,10 @@ pub fn render_cancel(renders: State<'_, Renders>, id: String) -> Result<(), Stri
     Ok(())
 }
 
-/// Encoders this FFmpeg offers, or an error when there's no FFmpeg at all.
 #[tauri::command]
 pub async fn render_encoders() -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let mut command = Command::new(ffmpeg());
-        command.args(["-hide_banner", "-encoders"]);
-        let output = background(&mut command).output().map_err(|e| format!("Couldn't start FFmpeg: {e}"))?;
+        let output = ffmpeg().args(["-hide_banner", "-encoders"]).output().map_err(start_failed)?;
         let text = String::from_utf8_lossy(&output.stdout);
         Ok(text.lines().filter_map(|line| line.split_whitespace().nth(1).map(String::from)).collect())
     })
@@ -226,15 +219,12 @@ pub struct StreamInfo {
     color_tagged: bool,
 }
 
-/// What a file holds, as far as a render needs to know.
 #[tauri::command]
 pub async fn render_probe(path: String) -> Result<StreamInfo, String> {
     const MATRICES: [&str; 5] = ["bt709", "bt470bg", "smpte170m", "smpte240m", "bt2020"];
     tauri::async_runtime::spawn_blocking(move || {
-        let mut command = Command::new(ffmpeg());
-        command.args(["-hide_banner", "-i", &path]);
         // With no output named FFmpeg exits with an error, after listing the streams.
-        let output = background(&mut command).output().map_err(|e| format!("Couldn't start FFmpeg: {e}"))?;
+        let output = ffmpeg().args(["-hide_banner", "-i", &path]).output().map_err(start_failed)?;
         let text = String::from_utf8_lossy(&output.stderr);
         let streams = || text.lines().filter(|line| line.contains("Stream #"));
         Ok(StreamInfo {

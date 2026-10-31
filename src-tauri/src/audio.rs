@@ -1,6 +1,3 @@
-//! Reads a media file's sound packet by packet to build its waveform, so a
-//! file's size only costs time, never memory.
-
 use std::{fs::File, path::Path};
 
 use serde::Serialize;
@@ -60,7 +57,6 @@ fn scan(path: &Path) -> Result<AudioScan, String> {
     let mut filled = 0;
     let mut samples: Option<SampleBuffer<f32>> = None;
 
-    // next_packet ends with an error at end of file, which is how this loop finishes.
     while let Ok(packet) = format.next_packet() {
         if packet.track_id() != track_id {
             continue;

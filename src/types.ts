@@ -1,4 +1,4 @@
-import type { Fps } from "./lib/time"
+import type { Fps, Ticks } from "./lib/time"
 
 export type MediaKind = "video" | "audio" | "image"
 
@@ -8,8 +8,7 @@ export interface MediaItem {
   path: string
   src: string
   kind: MediaKind
-  /** Ticks. */
-  duration: number
+  duration: Ticks
   width: number
   height: number
   frames: string[]
@@ -53,10 +52,9 @@ export interface Clip {
   type: ClipType
   mediaId?: string
   name: string
-  /** Ticks, like offset and duration. */
-  start: number
-  offset: number
-  duration: number
+  start: Ticks
+  offset: Ticks
+  duration: Ticks
   props: ClipProps
   text?: TextProps
   audioDetached?: boolean

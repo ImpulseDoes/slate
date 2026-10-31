@@ -1,9 +1,8 @@
-/**
- * Timeline time is a whole number of ticks. 705,600,000 per second divides
- * evenly by every frame rate Slate offers, NTSC ones included, so a frame edge
- * never lands between two values and long projects don't drift.
- */
+// 705,600,000 divides evenly by every frame rate Slate offers, NTSC included, so a
+// frame edge never lands between two values and long projects don't drift.
 export const TICKS = 705_600_000
+
+export type Ticks = number
 
 export interface Fps {
   num: number
@@ -31,16 +30,13 @@ export const sec = (t: number) => t / TICKS
 
 export const ticks = (seconds: number) => Math.round(seconds * TICKS)
 
-/** Length of one frame in ticks. */
 export const frameTicks = (fps: Fps) => (TICKS * fps.den) / fps.num
 
-/** Which frame a time falls on, rounding to the nearest. */
 export const frameIndex = (t: number, fps: Fps) => Math.round(t / frameTicks(fps))
 
-/** Snap a time to the nearest frame. */
 export const toFrame = (t: number, fps: Fps) => frameIndex(t, fps) * frameTicks(fps)
 
-/** `00:01:24:12`, counting frames at the nominal rate as NTSC timecode does. */
+// Counts frames at the nominal rate, as NTSC timecode does.
 export function timecode(t: number, fps: Fps): string {
   const nominal = Math.ceil(fps.num / fps.den)
   const frames = Math.max(0, frameIndex(t, fps))
@@ -48,7 +44,6 @@ export function timecode(t: number, fps: Fps): string {
   return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}:${pad(frames % nominal)}`
 }
 
-/** Short duration for pills, from ticks: `0:12`, `2:31`, `1:02:03`. */
 export function shortDuration(t: number): string {
   const s = Math.max(0, Math.round(sec(t)))
   const h = Math.floor(s / 3600)
@@ -56,7 +51,6 @@ export function shortDuration(t: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`
 }
 
-/** Ruler label: `0:05`, `1:30`, or `0:05:12` (with frames) when zoomed in. */
 export function rulerLabel(t: number, fps: Fps, withFrames: boolean): string {
   const whole = Math.floor(t / TICKS) * TICKS
   const base = shortDuration(whole)
