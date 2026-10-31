@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { OutputMeter } from "./components/audio/OutputMeter"
 import { ExportDialog } from "./components/dialogs/ExportDialog"
 import { LanguageDialog } from "./components/dialogs/LanguageDialog"
 import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
@@ -59,7 +60,10 @@ export default function App() {
           <Inspector />
         </div>
         <div className="h-2 shrink-0 cursor-row-resize" onPointerDown={startResize} role="separator" aria-orientation="horizontal" aria-label={t("app.resizeTimeline")} />
-        <Timeline height={timelineH} />
+        <div className="flex shrink-0 gap-2">
+          <Timeline height={timelineH} />
+          <OutputMeter />
+        </div>
       </main>
       <DragGhost />
       {dialog === "export" && <ExportDialog onClose={closeDialog} />}

@@ -5,6 +5,8 @@
     "": {
       "name": "slate",
       "dependencies": {
+        "@audio-ui/core": "^0.17.1",
+        "@audio-ui/react": "^0.9.1",
         "@fontsource/inter": "^5.3.0",
         "@hugeicons/core-free-icons": "^4.4.0",
         "@hugeicons/react": "^1.1.10",
@@ -28,6 +30,10 @@
     },
   },
   "packages": {
+    "@audio-ui/core": ["@audio-ui/core@0.17.1", "", {}, "sha512-c+Wcm9hhrfprbUnS9BibNlxwM35dMC3WpFzoU7/rE1uCfGeOErPeJ47QG4lSW4g6Hi4JSfJpxnOXt9rC+Bk+9A=="],
+
+    "@audio-ui/react": ["@audio-ui/react@0.9.1", "", { "dependencies": { "@audio-ui/core": "^0.17.1" }, "peerDependencies": { "@types/react": "^18 || ^19", "react": "^19.2.7", "react-dom": "^19.2.7" }, "optionalPeers": ["@types/react"] }, "sha512-zmTbNQZ0kSC7lxC4vi0E5lKG+/E4Q9tAr8TsahbfS5TdH6slEAEC+0+CKByaviWRCiVvnvijHONAla/Bfukxwg=="],
+
     "@fontsource/inter": ["@fontsource/inter@5.3.0", "", {}, "sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g=="],
 
     "@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.4.0", "", {}, "sha512-7Mz8bmGoY6tZ6l3C2TXwNMLVSr0I8HPwjjFIERAuJFj3rWwLxdF2ZLkDqdrVuEE1dx5b/VXyIsP4WoSU6Q40KQ=="],

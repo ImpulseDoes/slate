@@ -35,6 +35,8 @@
   --color-clip-image-strong: #5b3fd0;
   --color-clip-audio: #d3f2df;
   --color-clip-audio-strong: #23804a;
+  /* Waveform bars ahead of the playhead: the strong green, faded. */
+  --color-clip-audio-faded: rgb(35 128 74 / 0.42);
   --color-clip-text: #ffe8cf;
   --color-clip-text-strong: #bf6405;
 

@@ -42,7 +42,7 @@ export const ClipView = memo(function ClipView({ clip, media, ppt, height, selec
       </div>
       <div className="relative overflow-hidden" style={{ height: height - 4 - CLIP_LABEL_H }}>
         {clip.type === "video" && media && <Filmstrip clip={clip} media={media} ppt={ppt} width={width} height={height - 4 - CLIP_LABEL_H} />}
-        {clip.type === "audio" && media?.peaks && <Waveform clip={clip} peaks={media.peaks} width={width} />}
+        {clip.type === "audio" && media?.peaks && <Waveform clip={clip} peaks={media.peaks} />}
         {clip.type === "text" && clip.text && <div className="truncate px-2 text-small opacity-80">{clip.text.content}</div>}
       </div>
       {handles && (

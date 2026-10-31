@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { frameTicks, sec } from "../../lib/time"
+import { routeToBus } from "../../lib/audio/mixer"
 import { useEditor } from "../../store/editor"
 import type { Clip, MediaItem } from "../../types"
 
@@ -11,6 +12,10 @@ export function SyncedMedia({ kind, clip, media, active, muted, style, onPointer
   const playhead = useEditor((s) => s.playhead)
   const playing = useEditor((s) => s.playing)
   const fps = useEditor((s) => s.settings.fps)
+
+  useEffect(() => {
+    if (ref.current) routeToBus(ref.current)
+  }, [])
 
   useEffect(() => {
 
@@ -51,7 +56,7 @@ export function SyncedMedia({ kind, clip, media, active, muted, style, onPointer
     }
   }, [playhead, playing, active, muted, clip.offset, clip.start, clip.props.volume, fps])
 
-  if (kind === "audio") return <audio ref={ref} src={media.src} preload="auto" />
+  if (kind === "audio") return <audio ref={ref} crossOrigin="anonymous" src={media.src} preload="auto" />
 
-  return <video ref={ref} src={media.src} preload="auto" playsInline onPointerDown={onPointerDown} className="absolute inset-0 h-full w-full object-contain" style={style} />
+  return <video ref={ref} crossOrigin="anonymous" src={media.src} preload="auto" playsInline onPointerDown={onPointerDown} className="absolute inset-0 h-full w-full object-contain" style={style} />
 }

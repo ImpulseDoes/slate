@@ -52,7 +52,7 @@ export function Timeline({ height }: { height: number }) {
   for (const c of clips) if (c.linkId) linkSizes.set(c.linkId, (linkSizes.get(c.linkId) ?? 0) + 1)
 
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl bg-surface shadow-card" style={{ height }}>
+    <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-card" style={{ height }}>
       <Toolbar onFit={fit} />
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
         <div className="relative min-h-full" style={{ width: HEADER_W + contentW }}>
