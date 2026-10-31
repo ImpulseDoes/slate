@@ -2,11 +2,13 @@ import { memo, useEffect, useMemo, useRef, useState } from "react"
 import {
   AudioWave01Icon,
   ClipboardPasteIcon,
+  CombineIcon,
   Copy01Icon,
   CopyPlusIcon,
   Cursor01Icon,
   Delete02Icon,
   FitToScreenIcon,
+  Link01Icon,
   Magnet01Icon,
   Refresh01Icon,
   Scissor01Icon,
@@ -14,6 +16,7 @@ import {
   SquareLock02Icon,
   SquareUnlock02Icon,
   TextIcon,
+  Unlink01Icon,
   ViewIcon,
   ViewOffSlashIcon,
   VolumeHighIcon,
@@ -21,12 +24,13 @@ import {
   ZoomInAreaIcon,
   ZoomOutAreaIcon,
 } from "@hugeicons/core-free-icons"
-import { canDetachAudio, clipEnd, clipTypeForMedia, detachableClips, maxDurationFor, MAX_ZOOM, MIN_ZOOM, projectDuration, trackKindFor, useEditor, useMediaDrag } from "../store/editor"
+import { canDetachAudio, canLinkSelection, clipEnd, clipTypeForMedia, detachableClips, hasLinkedSelection, linkedWith, maxDurationFor, mergeableRuns, MAX_ZOOM, MIN_ZOOM, projectDuration, trackKindFor, useEditor, useMediaDrag } from "../store/editor"
 import { FRAME, rulerLabel, toFrame } from "../lib/time"
 import { PEAKS_PER_SECOND, type Clip, type MediaItem, type Track } from "../types"
+import type { ClipEdit } from "../store/editor"
 import { MOD } from "../lib/platform"
 import { openMenu, type MenuEntry } from "./overlays"
-import { Button, Tip } from "./ui"
+import { Button, Icon, Tip } from "./ui"
 
 const HEADER_W = 128
 const RULER_H = 28
@@ -44,13 +48,6 @@ const CLIP_STYLE = {
 } as const
 
 type DragMode = "move" | "trim-l" | "trim-r"
-interface ClipDraft {
-  id: string
-  trackId: string
-  start: number
-  offset: number
-  duration: number
-}
 
 export function Timeline({ height }: { height: number }) {
   const tracks = useEditor((s) => s.tracks)
@@ -61,7 +58,7 @@ export function Timeline({ height }: { height: number }) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState({ left: 0, width: 1000 })
-  const [draft, setDraft] = useState<ClipDraft | null>(null)
+  const [draft, setDraft] = useState<ClipEdit[] | null>(null)
 
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const duration = projectDuration(clips)
@@ -102,16 +99,32 @@ export function Timeline({ height }: { height: number }) {
     const track = state.tracks.find((t) => t.id === clip.trackId)
     if (e.button !== 0 || !track || track.locked) return
     e.stopPropagation()
-    if (e.shiftKey || e.ctrlKey || e.metaKey) state.selectClip(clip.id, true)
+    // Ctrl/⌘ works on this one clip, ignoring its links and the rest of the selection.
+    const solo = e.ctrlKey || e.metaKey
+    if (solo) state.selectClip(clip.id, "solo")
+    else if (e.shiftKey) state.selectClip(clip.id, "add")
     else if (!state.selectedClipIds.includes(clip.id)) state.selectClip(clip.id)
+
+    const { clips: all, selectedClipIds, tracks: allTracks, media } = useEditor.getState()
+    const locked = new Set(allTracks.filter((t) => t.locked).map((t) => t.id))
+    const linked = linkedWith(all, clip)
+    const others = solo ? [] : all.filter((c) => c.id !== clip.id && !locked.has(c.trackId) && (selectedClipIds.includes(c.id) || linked.includes(c)))
+    const group = [clip, ...others]
+    const earliest = Math.min(...group.map((c) => c.start))
+    // A trim takes along only the clips whose edge lines up with the one being dragged.
+    const edge = mode === "trim-l" ? (c: Clip) => c.start : clipEnd
+    const trimmed = group.filter((c) => Math.abs(edge(c) - edge(clip)) < FRAME / 2)
+    const earliestStart = Math.max(0, ...trimmed.map((c) => (maxDurationFor(c, media) === Infinity ? 0 : c.start - c.offset)))
+    const latestStart = Math.min(...trimmed.map((c) => clipEnd(c) - FRAME))
+    const earliestEnd = Math.max(...trimmed.map((c) => c.start + FRAME))
+    const latestEnd = Math.min(...trimmed.map((c) => c.start + maxDurationFor(c, media)))
+    const toEdit = (c: Clip): ClipEdit => ({ id: c.id, trackId: c.trackId, start: c.start, offset: c.offset, duration: c.duration })
 
     // Listen on window: moving to another track remounts the clip element.
     const startX = e.clientX
     const scale = state.pxPerSec
-    const maxDur = maxDurationFor(clip, state.media)
-    const bounded = maxDur !== Infinity
     const snapPoints = state.snapping
-      ? [0, state.playhead, ...state.clips.filter((c) => c.id !== clip.id).flatMap((c) => [c.start, clipEnd(c)])]
+      ? [0, state.playhead, ...all.filter((c) => !group.includes(c)).flatMap((c) => [c.start, clipEnd(c)])]
       : []
     const snap = (t: number) => {
       let best = t
@@ -126,7 +139,8 @@ export function Timeline({ height }: { height: number }) {
       return best
     }
 
-    let current: ClipDraft = { id: clip.id, trackId: clip.trackId, start: clip.start, offset: clip.offset, duration: clip.duration }
+    let current = group.map(toEdit)
+    let trackId = clip.trackId
     let moved = false
 
     const move = (ev: PointerEvent) => {
@@ -135,24 +149,23 @@ export function Timeline({ height }: { height: number }) {
       moved = true
       const dt = dx / scale
       if (mode === "move") {
-        let start = Math.max(0, clip.start + dt)
+        const lowest = clip.start - earliest
+        let start = Math.max(lowest, clip.start + dt)
         // Snap whichever edge lands closer. An edge with nothing nearby reports 0, so it can't win.
         const byStart = snap(start) - start
         const byEnd = snap(start + clip.duration) - (start + clip.duration)
         start += !byStart ? byEnd : !byEnd || Math.abs(byStart) <= Math.abs(byEnd) ? byStart : byEnd
-        let trackId = current.trackId
         const lane = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-track-id]")
         const target = lane && useEditor.getState().tracks.find((t) => t.id === lane.dataset.trackId)
         if (target && !target.locked && target.kind === trackKindFor(clip.type)) trackId = target.id
-        current = { ...current, trackId, start: toFrame(Math.max(0, start)) }
+        const shift = toFrame(Math.max(lowest, start)) - clip.start
+        current = group.map((c) => ({ ...toEdit(c), start: toFrame(c.start + shift), trackId: c.id === clip.id ? trackId : c.trackId }))
       } else if (mode === "trim-l") {
-        const minStart = bounded ? Math.max(0, clip.start - clip.offset) : 0
-        const start = toFrame(Math.min(clipEnd(clip) - FRAME, Math.max(minStart, snap(clip.start + dt))))
-        const shift = start - clip.start
-        current = { ...current, start, offset: Math.max(0, clip.offset + shift), duration: clip.duration - shift }
+        const shift = toFrame(Math.min(latestStart, Math.max(earliestStart, snap(clip.start + dt)))) - clip.start
+        current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.max(0, c.offset + shift), duration: c.duration - shift }))
       } else {
-        const end = Math.min(clip.start + maxDur, Math.max(clip.start + FRAME, snap(clipEnd(clip) + dt)))
-        current = { ...current, duration: toFrame(end - clip.start) }
+        const change = toFrame(Math.min(latestEnd, Math.max(earliestEnd, snap(clipEnd(clip) + dt)))) - clipEnd(clip)
+        current = trimmed.map((c) => ({ ...toEdit(c), duration: c.duration + change }))
       }
       setDraft(current)
     }
@@ -161,15 +174,15 @@ export function Timeline({ height }: { height: number }) {
       window.removeEventListener("pointerup", up)
       setDraft(null)
       if (!moved) return
-      const { moveClip, trimClip } = useEditor.getState()
-      if (mode === "move") moveClip(clip.id, current.trackId, current.start)
-      else trimClip(clip.id, current.start, current.offset, current.duration)
+      useEditor.getState().applyClipEdits(current)
     }
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", up)
   }
 
-  const shown = draft ? clips.map((c) => (c.id === draft.id ? { ...c, ...draft } : c)) : clips
+  const shown = draft ? clips.map((c) => ({ ...c, ...draft.find((d) => d.id === c.id) })) : clips
+  const linkSizes = new Map<string, number>()
+  for (const c of clips) if (c.linkId) linkSizes.set(c.linkId, (linkSizes.get(c.linkId) ?? 0) + 1)
 
   return (
     <section className="flex shrink-0 flex-col overflow-hidden rounded-xl bg-surface shadow-card" style={{ height }}>
@@ -201,7 +214,8 @@ export function Timeline({ height }: { height: number }) {
                       pps={pps}
                       height={TRACK_H[t.kind]}
                       selected={selected.includes(c.id)}
-                      dragging={draft?.id === c.id}
+                      dragging={!!draft?.some((d) => d.id === c.id)}
+                      linked={(linkSizes.get(c.linkId ?? "") ?? 0) > 1}
                       locked={t.locked}
                       onDragStart={beginClipDrag}
                     />
@@ -226,6 +240,11 @@ function selectionRange(clips: Clip[], ids: string[]): [number, number] | null {
 function clipMenu(e: React.MouseEvent, clip: Clip, locked: boolean) {
   const s = useEditor.getState()
   if (!s.selectedClipIds.includes(clip.id)) s.selectClip(clip.id)
+  const now = useEditor.getState()
+  const links: MenuEntry[] = [
+    ...(canLinkSelection(now) ? [{ label: "Link clips", icon: Link01Icon, kbd: `${MOD} L`, onSelect: s.linkSelected }] : []),
+    ...(hasLinkedSelection(now) ? [{ label: "Unlink", icon: Unlink01Icon, kbd: `${MOD} ⇧ L`, onSelect: s.unlinkSelected }] : []),
+  ]
   const underPlayhead = s.playhead > clip.start && s.playhead < clipEnd(clip)
   const media = s.media.find((m) => m.id === clip.mediaId)
   const audio: MenuEntry[] = clip.audioDetached
@@ -239,7 +258,9 @@ function clipMenu(e: React.MouseEvent, clip: Clip, locked: boolean) {
     { label: "Duplicate", icon: CopyPlusIcon, kbd: `${MOD} D`, disabled: locked, onSelect: s.duplicateSelected },
     "divider",
     { label: "Split at playhead", icon: SquareSplitHorizontalIcon, kbd: "S", disabled: locked || !underPlayhead, onSelect: s.splitAtPlayhead },
+    { label: "Merge clips", icon: CombineIcon, kbd: "M", disabled: locked || !mergeableRuns(now).length, onSelect: s.mergeSelected },
     ...audio,
+    ...links,
     ...(clip.type === "audio" ? [] : [{ label: "Reset transform", icon: Refresh01Icon, disabled: locked, onSelect: () => s.resetTransform(clip.id) }]),
     "divider",
     { label: "Delete", icon: Delete02Icon, kbd: "Del", danger: true, disabled: locked, onSelect: s.deleteSelected },
@@ -277,7 +298,10 @@ function Toolbar({ onFit }: { onFit: () => void }) {
   const hasSelection = useEditor((s) => s.selectedClipIds.length > 0)
   const hasClips = useEditor((s) => s.clips.length > 0)
   const canDetach = useEditor((s) => detachableClips(s).length > 0)
-  const { splitAtPlayhead, detachAudio, deleteSelected, addTitle, toggleSnapping, setZoom } = useEditor.getState()
+  const canLink = useEditor(canLinkSelection)
+  const canUnlink = useEditor(hasLinkedSelection)
+  const canMerge = useEditor((s) => mergeableRuns(s).length > 0)
+  const { splitAtPlayhead, detachAudio, linkSelected, unlinkSelected, mergeSelected, deleteSelected, addTitle, toggleSnapping, setZoom } = useEditor.getState()
   // Zoom slider works on a log scale so both ends feel equally fine-grained.
   const toSlider = (v: number) => Math.log(v / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM)
   const fromSlider = (v: number) => MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, v)
@@ -292,6 +316,24 @@ function Toolbar({ onFit }: { onFit: () => void }) {
       <Tip label="Move the sound to its own track" kbd="A">
         <Button variant="quiet" icon={AudioWave01Icon} onClick={detachAudio} disabled={!canDetach}>
           Detach audio
+        </Button>
+      </Tip>
+      {canLink || !canUnlink ? (
+        <Tip label="Cut and move these clips together" kbd={`${MOD} L`}>
+          <Button variant="quiet" icon={Link01Icon} onClick={linkSelected} disabled={!canLink}>
+            Link
+          </Button>
+        </Tip>
+      ) : (
+        <Tip label="Let these clips move on their own" kbd={`${MOD} ⇧ L`}>
+          <Button variant="quiet" icon={Unlink01Icon} onClick={unlinkSelected}>
+            Unlink
+          </Button>
+        </Tip>
+      )}
+      <Tip label="Rejoin clips cut from the same source" kbd="M">
+        <Button variant="quiet" icon={CombineIcon} onClick={mergeSelected} disabled={!canMerge}>
+          Merge
         </Button>
       </Tip>
       <Tip label="Delete" kbd="Del">
@@ -411,11 +453,12 @@ interface ClipViewProps {
   height: number
   selected: boolean
   dragging: boolean
+  linked: boolean
   locked: boolean
   onDragStart: (e: React.PointerEvent, clip: Clip, mode: DragMode) => void
 }
 
-const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dragging, locked, onDragStart }: ClipViewProps) {
+const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dragging, linked, locked, onDragStart }: ClipViewProps) {
   const left = clip.start * pps
   const width = Math.max(2, clip.duration * pps)
   const handles = !locked && width > 14
@@ -428,8 +471,9 @@ const ClipView = memo(function ClipView({ clip, media, pps, height, selected, dr
       onContextMenu={(e) => clipMenu(e, clip, locked)}
       title={clip.name}
     >
-      <div className="flex items-center truncate px-2 text-small font-semibold" style={{ height: CLIP_LABEL_H }}>
-        {clip.name}
+      <div className="flex items-center gap-1 px-2 text-small font-semibold" style={{ height: CLIP_LABEL_H }}>
+        {linked && <Icon icon={Link01Icon} size={12} className="shrink-0" />}
+        <span className="truncate">{clip.name}</span>
       </div>
       <div className="relative overflow-hidden" style={{ height: height - 4 - CLIP_LABEL_H }}>
         {clip.type === "video" && media && <Filmstrip clip={clip} media={media} pps={pps} width={width} height={height - 4 - CLIP_LABEL_H} />}

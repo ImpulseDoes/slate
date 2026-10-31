@@ -493,7 +493,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   unlinkSelected: () => {
     if (!hasLinkedSelection(get())) return
     get().checkpoint()
-    set((s) => ({ clips: s.clips.map((c) => (s.selectedClipIds.includes(c.id) ? { ...c, linkId: undefined } : c)) }))
+    // Keep one clip selected, or the next drag would still move them all together.
+    set((s) => ({
+      clips: s.clips.map((c) => (s.selectedClipIds.includes(c.id) ? { ...c, linkId: undefined } : c)),
+      selectedClipIds: s.selectedClipIds.slice(0, 1),
+    }))
   },
 
   mergeSelected: () => {
