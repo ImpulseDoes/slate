@@ -10,6 +10,8 @@ export type MenuEntry =
     danger?: boolean
     disabled?: boolean
     checked?: boolean
+    /** A color dot in place of the icon. */
+    swatch?: string
     onSelect: () => void
   }
 

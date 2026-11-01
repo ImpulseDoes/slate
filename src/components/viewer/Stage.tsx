@@ -7,7 +7,8 @@ import { trackPointer } from "../../lib/pointer"
 import { audible } from "../../lib/render/compose"
 import { ticks } from "../../lib/time"
 import { useEditor } from "../../store/editor"
-import { openMenu } from "../../store/overlays"
+import { openMenu, type MenuEntry } from "../../store/overlays"
+import { GUIDE_COLORS, guideColor, setGuideColor, usePrefs } from "../../store/prefs"
 import type { Clip } from "../../types"
 import { Layer } from "./Layer"
 import { assignPlayers } from "./players"
@@ -24,6 +25,7 @@ export function Stage() {
   const tracks = useEditor((s) => s.tracks)
   const media = useEditor((s) => s.media)
   const showGuides = useEditor((s) => s.showGuides)
+  const guide = guideColor(usePrefs((s) => s.guideColor))
   const settings = useEditor((s) => s.settings)
   const frame = useRef<HTMLDivElement>(null)
   const [centered, setCentered] = useState({ x: false, y: false })
@@ -85,8 +87,8 @@ export function Stage() {
         {clips.length === 0 && (
           <p className="absolute inset-0 flex items-center justify-center text-h-sm text-white/60">{t("viewer.empty")}</p>
         )}
-        {(showGuides || centered.x) && <div className={`pointer-events-none absolute inset-y-0 left-1/2 z-40 w-px -translate-x-1/2 ${centered.x ? "bg-guide" : "bg-white/40"}`} />}
-        {(showGuides || centered.y) && <div className={`pointer-events-none absolute inset-x-0 top-1/2 z-40 h-px -translate-y-1/2 ${centered.y ? "bg-guide" : "bg-white/40"}`} />}
+        {(showGuides || centered.x) && <div className={`pointer-events-none absolute inset-y-0 left-1/2 z-40 -translate-x-1/2 shadow-[0_0_0_1px_rgb(0_0_0/0.35)] ${centered.x ? "w-0.5" : "w-px"}`} style={{ background: guide }} />}
+        {(showGuides || centered.y) && <div className={`pointer-events-none absolute inset-x-0 top-1/2 z-40 -translate-y-1/2 shadow-[0_0_0_1px_rgb(0_0_0/0.35)] ${centered.y ? "h-0.5" : "h-px"}`} style={{ background: guide }} />}
       </div>
     </div>
   )
@@ -104,5 +106,14 @@ function stageMenu(e: React.MouseEvent) {
     { label: t("timeline.addTitle"), icon: TextIcon, kbd: "T", onSelect: s.addTitle },
     "divider",
     { label: t("viewer.guides"), icon: CrosshairIcon, kbd: "G", checked: s.showGuides, onSelect: s.toggleGuides },
+    "divider",
+    ...guideColorEntries(),
   ])
+}
+
+export function guideColorEntries(): MenuEntry[] {
+
+  const current = usePrefs.getState().guideColor
+
+  return GUIDE_COLORS.map((g) => ({ label: t(g.label), swatch: g.color, checked: g.id === current, onSelect: () => setGuideColor(g.id) }))
 }

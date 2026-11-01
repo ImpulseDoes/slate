@@ -67,6 +67,8 @@ fetch "https://code.videolan.org/videolan/x264/-/archive/$X264_COMMIT/x264-$X264
 
 step "x265"
 fetch "https://download.videolan.org/pub/videolan/x265/x265_$X265_VERSION.tar.gz" $X265_SHA256 x265.tar.gz
+# CMake 4 refuses the old policies x265 asks for. With the new ones Apple's compiler reports as AppleClang, so match it too.
+perl -pi -e 's/cmake_policy\(SET (CMP0025|CMP0054) OLD\)/cmake_policy(SET $1 NEW)/; s/if\(\$\{CMAKE_CXX_COMPILER_ID\} STREQUAL "Clang"\)/if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")/' "$work/src/x265_$X265_VERSION/source/CMakeLists.txt"
 x265_flags=()
 # Macs have no SVE; the rest is picked per chip when it runs.
 [ "$os" = Darwin ] && [ "$arch" = arm64 ] && x265_flags+=(-DENABLE_SVE=OFF -DENABLE_SVE2=OFF)

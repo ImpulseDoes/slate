@@ -12,12 +12,14 @@ import { relinkMissing, unresolvedMedia } from "../media/importer"
 import { probe } from "../media/probe"
 import { baseName, dirName, joinPath, stem } from "../paths"
 import { isTauri } from "../platform"
+import { useRecorder } from "../audio/recorder"
 import { loadFont } from "../text/fonts"
 import { parseProject, PROJECT_EXTENSION, toProjectFile, type ProjectFile } from "./file"
 
 const AUTOSAVE_EVERY_MS = 15_000
 const RECENT_KEY = "slate.recent"
 const RECENT_LIMIT = 6
+const RELOAD_KEY = "slate.reload"
 
 interface Autosave {
   savedAt: number
@@ -228,12 +230,49 @@ function guardClose() {
   })
 }
 
+/** Reloads the window and opens the same project again, unsaved changes included. */
+export function reloadWindow() {
+
+  if (runningRenders(useRenders.getState())) return notify(t("reload.rendering"), "error")
+
+  const { recording, saving } = useRecorder.getState()
+
+  if (recording || saving) return notify(t("reload.recording"), "error")
+  if (isTauri) {
+    const state = useEditor.getState()
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ path: state.projectPath, dirty: isDirty(state), project: toProjectFile(state) }))
+  }
+
+  location.reload()
+}
+
+function reopenAfterReload() {
+
+  const stored = sessionStorage.getItem(RELOAD_KEY)
+
+  sessionStorage.removeItem(RELOAD_KEY)
+
+  if (!stored) return false
+
+  try {
+
+    const { path, dirty, project } = JSON.parse(stored)
+
+    void adopt(parseProject(JSON.stringify(project)), path, dirty)
+
+    return true
+  } catch {
+    return false
+  }
+}
+
 let started = false
 
 export function startSession() {
+
   if (!isTauri || started) return
   started = true
   guardClose()
   startAutosave()
-  void offerRecovery()
+  if (!reopenAfterReload()) void offerRecovery()
 }

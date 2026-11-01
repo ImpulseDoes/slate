@@ -7,10 +7,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
 permissions:
   contents: read
 
@@ -21,6 +17,11 @@ defaults:
 jobs:
   build:
     name: ${{ matrix.name }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/') ||
+      contains(join(github.event.commits.*.message, ' '), '--build') ||
+      contains(github.event.pull_request.title, '--build')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -89,6 +90,27 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # The repo keeps only icon.ico; macOS and Linux bundles need PNG and ICNS, made here from its largest picture.
+      - name: Make the macOS and Linux icons
+        if: runner.os != 'Windows'
+        run: |
+          bun -e '
+            const fs = require("fs")
+            const ico = fs.readFileSync("src-tauri/icons/icon.ico")
+            let best
+            for (let i = 0; i < ico.readUInt16LE(4); i++) {
+              const at = 6 + i * 16
+              const size = ico[at] || 256
+              if (!best || size > best.size) best = { size, length: ico.readUInt32LE(at + 8), offset: ico.readUInt32LE(at + 12) }
+            }
+            fs.writeFileSync(process.env.RUNNER_TEMP + "/icon.png", ico.subarray(best.offset, best.offset + best.length))
+          '
+          bun run tauri icon "$RUNNER_TEMP/icon.png" -o "$RUNNER_TEMP/icons"
+          for file in "$RUNNER_TEMP"/icons/*.png "$RUNNER_TEMP"/icons/*.icns; do
+            [ -e "src-tauri/icons/$(basename "$file")" ] || cp "$file" src-tauri/icons/
+          done
+          ls src-tauri/icons
 
       - name: Build the app
         run: |

@@ -18,6 +18,7 @@
         "minWidth": 1280,
         "minHeight": 720,
         "center": true,
+        "devtools": false,
         "decorations": false,
         "transparent": false,
         "backgroundColor": "#161616"

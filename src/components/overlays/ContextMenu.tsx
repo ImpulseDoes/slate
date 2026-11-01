@@ -85,9 +85,10 @@ export function ContextMenu({ x, y, entries }: MenuState) {
             className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body outline-none disabled:opacity-40 ${entry.danger ? "text-error hover:bg-danger-soft focus-visible:bg-danger-soft" : "text-fg hover:bg-raised focus-visible:bg-raised"}`}
           >
             <span className={`flex w-4 shrink-0 justify-center ${entry.danger ? "" : "text-label"}`}>
-              {entry.checked ? <Icon icon={Tick02Icon} /> : entry.icon ? <Icon icon={entry.icon} /> : null}
+              {entry.swatch ? <span className="h-3 w-3 rounded-full ring-1 ring-black/15" style={{ background: entry.swatch }} /> : entry.checked ? <Icon icon={Tick02Icon} /> : entry.icon ? <Icon icon={entry.icon} /> : null}
             </span>
             <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+            {entry.swatch && entry.checked && <span className="text-label"><Icon icon={Tick02Icon} /></span>}
             {entry.kbd && <span className="ml-6 text-small text-muted">{entry.kbd}</span>}
           </button>
         ),

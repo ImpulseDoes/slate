@@ -3,5 +3,8 @@ import "@fontsource/inter/500.css"
 import "@fontsource/inter/600.css"
 import "./styles.css"
 import App from "./App"
+import { lockDown } from "./lib/lockdown"
+
+lockDown()
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<App />)

@@ -5,7 +5,9 @@ import { projectDuration } from "../../lib/clips"
 import { useT } from "../../lib/i18n"
 import { frameTicks, timecode } from "../../lib/time"
 import { useEditor } from "../../store/editor"
+import { openMenu } from "../../store/overlays"
 import { Button, Icon, Tip } from "../ui"
+import { guideColorEntries } from "./Stage"
 
 export function Transport() {
 
@@ -58,7 +60,7 @@ export function Transport() {
           <Button variant="quiet" icon={Mic01Icon} onClick={toggleRecording} disabled={saving} aria-pressed={recording} aria-label={t(recording ? "record.stop" : "record.start")} className={recording ? "text-error hover:text-error" : ""} />
         </Tip>
         <Tip label={t("viewer.guides")} kbd="G">
-          <Button variant="quiet" icon={CrosshairIcon} active={showGuides} onClick={toggleGuides} aria-pressed={showGuides} aria-label={t("viewer.guides")} />
+          <Button variant="quiet" icon={CrosshairIcon} active={showGuides} onClick={toggleGuides} onContextMenu={(e) => openMenu(e, guideColorEntries())} aria-pressed={showGuides} aria-label={t("viewer.guides")} />
         </Tip>
         <span className="tnum text-body text-muted">{timecode(duration, fps)}</span>
       </div>
