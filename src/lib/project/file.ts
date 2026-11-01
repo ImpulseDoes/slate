@@ -21,6 +21,7 @@ export interface MediaRef {
   proxy?: string
   audioStream?: number
   companions?: string[]
+  hdr?: "pq" | "hlg"
 }
 
 export interface ProjectFile {
@@ -63,7 +64,7 @@ export function toProjectFile(s: Source): ProjectFile {
     settings: s.settings,
     media: s.media
       .filter((m) => !s.removedMediaIds.includes(m.id))
-      .map(({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions }) => ({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions })),
+      .map(({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions, hdr }) => ({ id, name, path, kind, duration, width, height, hasAudio, proxy, audioStream, companions, hdr })),
     tracks: s.tracks,
     clips: s.clips,
     markers: s.markers,

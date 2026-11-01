@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react"
+import { Fragment, useMemo, useRef, useState } from "react"
 import { dissolveTails, keyedPropsAt } from "../../lib/animation"
 import { CrosshairIcon, PauseIcon, PlayIcon, PreviousIcon, SquareSplitHorizontalIcon, TextIcon } from "@hugeicons/core-free-icons"
 import { clipEnd } from "../../lib/clips"
 import { t, useT } from "../../lib/i18n"
 import { trackPointer } from "../../lib/pointer"
+import { voiceSource } from "../../lib/audio/voice"
 import { audible } from "../../lib/render/compose"
 import { ticks } from "../../lib/time"
 import { useEditor } from "../../store/editor"
@@ -72,16 +73,23 @@ export function Stage() {
         {videoTracks.map((t, z) =>
           byStart
             .filter((c) => c.trackId === t.id && near(c))
-            .map((c) => (
-              <Layer key={players.current.get(c.id)} clip={c} media={c.mediaId ? mediaById.get(c.mediaId) : undefined} visible={!t.hidden && active(c)} muted={!audible(c, t)} z={z} time={playhead} tail={tailOf(c)} settings={settings} onMove={beginMove} />
-            )),
+            .map((c) => {
+              const m = c.mediaId ? mediaById.get(c.mediaId) : undefined
+              const voice = voiceSource(c, m)
+              return (
+                <Fragment key={players.current.get(c.id)}>
+                  <Layer clip={c} media={m} visible={!t.hidden && active(c)} muted={!audible(c, t) || !!voice} z={z} time={playhead} tail={tailOf(c)} settings={settings} onMove={beginMove} />
+                  {voice && m && <SyncedMedia kind="audio" clip={c} media={m} src={voice} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} />}
+                </Fragment>
+              )
+            }),
         )}
         {audioTracks.map((t) =>
           clips
             .filter((c) => c.trackId === t.id && near(c))
             .map((c) => {
               const m = c.mediaId ? mediaById.get(c.mediaId) : undefined
-              return m ? <SyncedMedia key={players.current.get(c.id)} kind="audio" clip={c} media={m} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} /> : null
+              return m ? <SyncedMedia key={players.current.get(c.id)} kind="audio" clip={c} media={m} src={voiceSource(c, m)} active={active(c)} muted={!audible(c, t)} tail={tailOf(c)} /> : null
             }),
         )}
         {clips.length === 0 && (

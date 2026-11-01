@@ -10,7 +10,23 @@ import { errorText } from "../errors"
 import { t } from "../i18n"
 import { baseName } from "../paths"
 import type { Clip } from "../../types"
-import { assumedMatrix, CONTAINER, planRender, type ExportOptions, type TitleImage } from "./plan"
+import { sameFps } from "../time"
+import { assumedMatrix, CONTAINER, planRender, type CopySource, type ExportOptions, type TitleImage } from "./plan"
+
+interface CopyInfo {
+  width: number
+  height: number
+  rateNum: number
+  rateDen: number
+  keyframes: { at: number; time: number }[]
+}
+
+/** Only a recording with the export's own codec, size and frame rate can be copied into it. */
+async function copySource(path: string, options: ExportOptions): Promise<CopySource | undefined> {
+  const info = await invoke<CopyInfo | null>("render_copy_info", { path }).catch(() => null)
+  const fits = info && info.width === options.width && info.height === options.height && sameFps({ num: info.rateNum, den: info.rateDen }, options.fps)
+  return fits && info.keyframes.length > 1 ? { keyframes: info.keyframes } : undefined
+}
 import { drawTitle } from "./titles"
 
 const MAX_TITLE_SCALE = 3
@@ -27,6 +43,7 @@ export function checkExportable(range: [number, number]): string | null {
 
   if (missing.length) return t("export.offline", { names: missing.join(", "), count: missing.length })
   if (used.some((m) => m?.status === "loading")) return t("export.stillReading")
+  if (state.clips.some((c) => c.voice && c.start < range[1] && clipEnd(c) > range[0] && !media.get(c.mediaId ?? "")?.voice)) return t("export.voicePending")
 
   return null
 }
@@ -50,7 +67,8 @@ export async function queueExport(options: ExportOptions): Promise<boolean> {
       .map(async (m) => {
         if (m.kind === "image") return { ...m, hasAudio: false }
         const streams = await invoke<{ hasAudio: boolean; colorTagged: boolean }>("render_probe", { path: m.path })
-        return { ...m, hasAudio: streams.hasAudio, colorMatrix: m.kind === "video" && !streams.colorTagged ? assumedMatrix(m.height) : undefined }
+        const copy = options.smart && m.kind === "video" ? await copySource(m.path, options) : undefined
+        return { ...m, hasAudio: streams.hasAudio, colorMatrix: m.kind === "video" && !streams.colorTagged ? assumedMatrix(m.height) : undefined, copy }
       }),
   )
 
@@ -83,6 +101,8 @@ export async function queueExport(options: ExportOptions): Promise<boolean> {
     const plan = planRender({ settings: state.settings, tracks: state.tracks, clips, media, titles }, options)
 
     useRenders.getState().enqueue({ name: baseName(output), output, plan, images })
+
+    if (plan.copied) notify(t("export.smartCopied", { percent: Math.round((plan.copied / plan.frames) * 100) }))
 
     return true
 

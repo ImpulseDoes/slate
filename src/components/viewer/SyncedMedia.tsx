@@ -16,7 +16,7 @@ function seek(el: HTMLMediaElement, to: number, tolerance: number) {
   if (!el.seeking && Math.abs(el.currentTime - to) > tolerance) el.currentTime = to
 }
 
-export function SyncedMedia({ kind, clip, media, active, muted, tail, style, onPointerDown }: { kind: "video" | "audio"; clip: Clip; media: MediaItem; active: boolean; muted: boolean; tail: number; style?: React.CSSProperties; onPointerDown?: React.PointerEventHandler }) {
+export function SyncedMedia({ kind, clip, media, src = media.src, active, muted, tail, style, onPointerDown }: { kind: "video" | "audio"; clip: Clip; media: MediaItem; src?: string; active: boolean; muted: boolean; tail: number; style?: React.CSSProperties; onPointerDown?: React.PointerEventHandler }) {
 
   const ref = useRef<HTMLVideoElement & HTMLAudioElement>(null)
   const playhead = useEditor((s) => s.playhead)
@@ -82,9 +82,9 @@ export function SyncedMedia({ kind, clip, media, active, muted, tail, style, onP
       seek(el, target, (sec(frameTicks(fps)) * speed) / 2)
 
     }
-  }, [playhead, playing, active, muted, clip, speed, tail, media.src, media.duration, fps, settled])
+  }, [playhead, playing, active, muted, clip, speed, tail, src, media.duration, fps, settled])
 
-  if (kind === "audio") return <audio ref={ref} crossOrigin="anonymous" src={media.src} preload="auto" />
+  if (kind === "audio") return <audio ref={ref} crossOrigin="anonymous" src={src} preload="auto" />
 
-  return <video ref={ref} crossOrigin="anonymous" src={media.src} preload="auto" playsInline onPointerDown={onPointerDown} className="absolute inset-0 h-full w-full object-contain" style={style} />
+  return <video ref={ref} crossOrigin="anonymous" src={src} preload="auto" playsInline onPointerDown={onPointerDown} className="absolute inset-0 h-full w-full object-contain" style={style} />
 }

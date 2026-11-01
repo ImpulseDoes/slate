@@ -17,6 +17,10 @@ export interface ExportOptions {
   quality: Quality
   speed: Speed
   range: [number, number]
+  /** Copies untouched stretches of matching H.264 recordings instead of encoding them again. */
+  smart?: boolean
+  /** HDR10 out: H.265 at 10 bits with PQ brightness and BT.2020 color. */
+  hdr?: boolean
 }
 
 export type ColorMatrix = "bt709" | "bt601"
@@ -37,8 +41,14 @@ export interface RenderSource {
   settings: ProjectSettings
   tracks: Track[]
   clips: Clip[]
-  media: (Pick<MediaItem, "id" | "path" | "kind" | "width" | "height" | "hasAudio" | "audioStream"> & { colorMatrix?: ColorMatrix })[]
+  media: (Pick<MediaItem, "id" | "path" | "kind" | "width" | "height" | "hasAudio" | "audioStream" | "voice" | "hdr"> & { colorMatrix?: ColorMatrix; copy?: CopySource })[]
   titles: Record<string, TitleImage>
+}
+
+/** A recording whose packets can go into the export as they are: same codec, size and frame rate. */
+export interface CopySource {
+  /** Where each closed group of pictures starts: `at` exactly, as `-ss` counts seconds, and `time` on the frame grid. */
+  keyframes: { at: number; time: number }[]
 }
 
 export interface RenderPlan {
@@ -48,6 +58,8 @@ export interface RenderPlan {
   files: { name: string; text: string }[]
   result: string
   frames: number
+  /** Frames copied from recordings rather than encoded. */
+  copied: number
 }
 
 export const CONTAINER: Record<Codec, string> = { h264: "mp4", h265: "mp4", prores: "mov" }
@@ -65,6 +77,14 @@ const SAMPLE_RATE = 48_000
 const READ_MARGIN = 1
 const COMMON = ["-hide_banner", "-nostdin", "-y", "-v", "error", "-progress", "pipe:1", "-nostats"]
 const COLOR = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"]
+const HDR_COLOR = ["-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-color_range", "tv"]
+/** An HDR recording in an SDR export, the same as the viewer's copy: SDR white at 203 nits lands near white, highlights roll off. */
+const TONE_MAP = "zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:param=0.5:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv444p"
+/** Anything SDR in an HDR export, with its white at 203 nits as BT.2408 asks. On zscale's scale that takes 163. */
+const SDR_TO_PQ = "t=smpte2084:p=bt2020:m=bt2020nc:r=tv:npl=163"
+const HDR10 = "hdr10=1:hdr10-opt=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:range=limited:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400"
+
+export const isHdrExport = (options: ExportOptions) => !!options.hdr && options.codec === "h265"
 /** Transparent border around a moving layer: past its edge FFmpeg repeats the outermost pixel, which is then invisible. */
 const MOVING_MARGIN = 4
 /** A moving layer is worked on at up to this many times the output size, so zooming in keeps the source's detail. */
@@ -112,32 +132,89 @@ function buildPieces(source: RenderSource, options: ExportOptions, frameLength: 
   )
 }
 
-function chunkRanges(pieces: Piece[], frames: number): [number, number][] {
-  const cuts = [...new Set(pieces.flatMap((p) => [p.first, p.last]))].filter((f) => f > 0 && f < frames).sort((a, b) => a - b)
+function chunkRanges(pieces: Piece[], from: number, to: number): [number, number][] {
+  const cuts = [...new Set(pieces.flatMap((p) => [p.first, p.last]))].filter((f) => f > from && f < to).sort((a, b) => a - b)
   const within = (a: number, b: number) => pieces.filter((p) => p.first < b && p.last > a).length
   const ranges: [number, number][] = []
-  let start = 0
-  while (start < frames) {
-    if (within(start, frames) <= MAX_CHUNK_INPUTS) {
-      ranges.push([start, frames])
+  let start = from
+  while (start < to) {
+    if (within(start, to) <= MAX_CHUNK_INPUTS) {
+      ranges.push([start, to])
       break
     }
     const later = cuts.filter((c) => c > start)
-    const end = later.filter((c) => within(start, c) <= MAX_CHUNK_INPUTS).pop() ?? later[0] ?? frames
+    const end = later.filter((c) => within(start, c) <= MAX_CHUNK_INPUTS).pop() ?? later[0] ?? to
     ranges.push([start, end])
     start = end
   }
   return ranges
 }
 
-function encoderArgs({ codec, quality, speed }: ExportOptions): string[] {
+interface CopySpan {
+  piece: Piece
+  /** Output frames, end exclusive, each on a keyframe of the recording. */
+  first: number
+  last: number
+  /** Where the first keyframe sits in the recording, in seconds. */
+  at: number
+}
+
+/** A clip shown exactly as recorded: full frame, normal speed, not moved or faded. */
+const untouched = (clip: Clip) => {
+  const { x, y, scale, rotation, opacity } = clip.props
+  const moving = (["x", "y", "scale", "rotation", "opacity"] as const).some((prop) => clip.keys?.[prop]?.length)
+  return clip.type === "video" && speedOf(clip) === 1 && !clip.crop && !moving && x === 0 && y === 0 && scale === 100 && rotation === 0 && opacity === 100
+}
+
+/**
+ * Whole groups of pictures that can be copied from the recording, with nothing else in
+ * the picture. Everything between them, cut points included, is encoded as usual.
+ */
+function copySpans(options: ExportOptions, pieces: Piece[], frameLength: number): CopySpan[] {
+
+  const timeOf = (frame: number) => options.range[0] + frame * frameLength
+  const spans: CopySpan[] = []
+
+  for (const piece of pieces) {
+
+    const keyframes = piece.media?.copy?.keyframes
+
+    if (!piece.video || !keyframes?.length || !untouched(piece.clip)) continue
+
+    const stops = keyframes.flatMap(({ at, time }) => {
+      const position = (time * TICKS - piece.offset) / frameLength
+      const frame = piece.first + Math.round(position)
+      return Math.abs(position - Math.round(position)) < 0.01 && frame >= piece.first && frame <= piece.last ? [{ frame, at }] : []
+    })
+
+    for (let i = 0; i + 1 < stops.length; i++) {
+
+      const [a, b] = [stops[i].frame, stops[i + 1].frame]
+      const covered = pieces.some((p) => p !== piece && p.video && p.first < b && p.last > a)
+      const fading = !!(piece.clip.enter || piece.clip.exit) && Array.from({ length: b - a }, (_, n) => timeOf(a + n)).some((t) => visibleAt(piece.clip, t, piece.tail) !== 1 || dipAt(piece.clip, t, piece.tail) !== 0)
+
+      if (covered || fading || b <= a) continue
+
+      const last = spans[spans.length - 1]
+
+      if (last?.piece === piece && last.last === a) last.last = b
+      else spans.push({ piece, first: a, last: b, at: stops[i].at })
+    }
+  }
+
+  return spans.sort((a, b) => a.first - b.first)
+}
+
+function encoderArgs(options: ExportOptions): string[] {
+  const { codec, quality, speed } = options
+  const hdr = isHdrExport(options)
   if (codec === "prores") return ["-c:v", "prores_ks", "-profile:v", "3", "-vendor", "apl0", "-pix_fmt", "yuv422p10le"]
   const rate =
     quality.mode === "quality"
       ? ["-crf", String(quality.crf)]
       : ["-b:v", `${quality.mbps}M`, "-maxrate", `${quality.mbps * 1.5}M`, "-bufsize", `${quality.mbps * 3}M`]
-  const common = ["-preset", speed, "-pix_fmt", "yuv420p", ...rate]
-  return codec === "h264" ? ["-c:v", "libx264", ...common] : ["-c:v", "libx265", ...common, "-x265-params", "log-level=error", "-tag:v", "hvc1"]
+  const common = ["-preset", speed, "-pix_fmt", hdr ? "yuv420p10le" : "yuv420p", ...rate]
+  return codec === "h264" ? ["-c:v", "libx264", ...common] : ["-c:v", "libx265", ...common, "-x265-params", hdr ? `log-level=error:${HDR10}` : "log-level=error", "-tag:v", "hvc1"]
 }
 
 const number = (v: number) => v.toFixed(3)
@@ -219,18 +296,27 @@ function tempoFilters(speed: number) {
   return rest === 1 ? filters : [...filters, `atempo=${rest}`]
 }
 
-function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece[], from: number, to: number, audioStreams: boolean, frameLength: number) {
+function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece[], from: number, to: number, audioStreams: boolean, frameLength: number, withVideo = true) {
   const { width, height, fps } = options
   const rate = `${fps.num}/${fps.den}`
   const frames = to - from
   const sampleAt = (frame: number) => Math.round((frame * frameLength * SAMPLE_RATE) / TICKS)
   const timeOf = (frame: number) => options.range[0] + frame * frameLength
   const unit = width / source.settings.width
-  const graph = [`color=c=black:s=${width}x${height}:r=${rate}:d=${seconds((frames + 2) * frameLength)},format=yuv444p,trim=end_frame=${frames},setsar=1[base0]`]
+  const hdr = isHdrExport(options)
+  const deep = hdr ? "10le" : ""
+  const blend = hdr ? "yuv444p10" : "yuv444"
+  const graph = withVideo ? [`color=c=black:s=${width}x${height}:r=${rate}:d=${seconds((frames + 2) * frameLength)},format=yuv444p${deep},trim=end_frame=${frames},setsar=1[base0]`] : []
   const inputs: string[] = []
   const sounds: string[] = []
   let layers = 0
   let solids = 0
+  let opened = 0
+
+  const addInput = (args: string[]) => {
+    inputs.push(...args)
+    return opened++
+  }
 
   /** A black picture whose alpha follows `levels` frame by frame. Worked out at 2×2, so it costs almost nothing at any size. */
   const solid = (w: number, h: number, levels: number[]) => {
@@ -239,7 +325,8 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
     return [`color=c=black:s=2x2:r=${rate}:d=${seconds((levels.length + 2) * frameLength)}`, "format=yuva444p", ...alpha, `scale=${w}:${h}:flags=neighbor`, `trim=end_frame=${levels.length}`].join(",")
   }
 
-  pieces.forEach((piece, input) => {
+  pieces.forEach((piece) => {
+    if (!withVideo && !piece.audio) return
     const { clip, tail } = piece
     const first = Math.max(piece.first, from)
     const last = Math.min(piece.last, to)
@@ -253,18 +340,30 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
     const reading = seconds(duration * speed + READ_MARGIN * TICKS)
     const everyFrame = <T,>(at: (time: number) => T) => Array.from({ length: count }, (_, i) => at(timeOf(first + i)))
 
-    if (!image) inputs.push("-ss", seconds(offset), "-t", reading, "-i", path)
-    else if (path.toLowerCase().endsWith(".gif")) inputs.push("-ignore_loop", "0", "-t", reading, "-i", path)
-    else inputs.push("-loop", "1", "-framerate", rate, "-t", reading, "-i", path)
+    const input = !image
+      ? addInput(["-ss", seconds(offset), "-t", reading, "-i", path])
+      : path.toLowerCase().endsWith(".gif")
+        ? addInput(["-ignore_loop", "0", "-t", reading, "-i", path])
+        : addInput(["-loop", "1", "-framerate", rate, "-t", reading, "-i", path])
 
-    if (piece.video) {
+    if (piece.video && withVideo) {
       const sourceWidth = title?.width ?? piece.media!.width
       const sourceHeight = title?.height ?? piece.media!.height
-      const matrix = piece.media?.colorMatrix ? `in_color_matrix=${piece.media.colorMatrix}:` : ""
-      const scaleTo = (w: number, h: number) => `scale=${w}:${h}:flags=bicubic+accurate_rnd:${matrix}out_color_matrix=bt709:out_range=tv`
+      const assumed = piece.media?.colorMatrix
+      const matrix = assumed && !hdr ? `in_color_matrix=${assumed}:` : ""
+      const scaleTo = (w: number, h: number) => `scale=${w}:${h}:flags=bicubic+accurate_rnd:${matrix}out_color_matrix=${hdr ? "bt2020" : "bt709"}:out_range=tv`
+      const brightness = (() => {
+        const kind = piece.media?.hdr
+        if (!hdr) return kind ? `,${TONE_MAP}` : ""
+        if (kind === "pq") return ""
+        if (kind === "hlg") return ",zscale=t=smpte2084:npl=1000,format=yuv444p10le"
+        if (image) return `,zscale=tin=iec61966-2-1:pin=bt709:${SDR_TO_PQ},format=yuva444p10le`
+        const untagged = assumed ? `min=${assumed === "bt601" ? "170m" : "709"}:rin=tv:` : ""
+        return `,zscale=tin=bt709:pin=${assumed === "bt601" ? "smpte170m" : "bt709"}:${untagged}${SDR_TO_PQ},format=yuv444p10le`
+      })()
       const opacity = everyFrame((t) => (propsAt(clip, t).opacity / 100) * visibleAt(clip, t, tail))
       const fading = opacity.some((v) => Math.abs(v - opacity[0]) > 0.001)
-      const open = `[${input}:v]${speed === 1 ? "" : `setpts=(PTS-STARTPTS)/${speed},`}fps=${rate}:round=near`
+      const open = `[${input}:v]${speed === 1 ? "" : `setpts=(PTS-STARTPTS)/${speed},`}fps=${rate}:round=near${brightness}`
       const hold = ["tpad=stop=-1:stop_mode=clone", `trim=end_frame=${count}`]
       const place = `setpts=PTS-STARTPTS+(${first - from})*${fps.den}/${fps.num}/TB`
       const name = `layer${layers}`
@@ -299,7 +398,7 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
           const paddedH = canvasH + MOVING_MARGIN * 2
           const padX = Math.floor((paddedW - fitW) / 2)
           const padY = Math.floor((paddedH - fitH) / 2)
-          const chain = [open, scaleTo(fitW, fitH), "setsar=1", "format=yuva444p"]
+          const chain = [open, scaleTo(fitW, fitH), "setsar=1", `format=yuva444p${deep}`]
 
           if (clip.crop) {
             const cropX = Math.round(clip.crop.left * fitW)
@@ -336,7 +435,7 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
           if (density > 1) chain.push(`scale=${width}:${height}:flags=bicubic`)
 
           finish(chain, width, height, [])
-          graph.push(`[base${layers}][${name}]overlay=x=0:y=0:format=yuv444:eof_action=pass[base${layers + 1}]`)
+          graph.push(`[base${layers}][${name}]overlay=x=0:y=0:format=${blend}:eof_action=pass[base${layers + 1}]`)
           layers++
 
         } else {
@@ -346,9 +445,9 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
           if (at) {
             const chain = [open]
             if (at.crop) chain.push(`crop=${at.crop.width}:${at.crop.height}:${at.crop.x}:${at.crop.y}:exact=1`)
-            chain.push(scaleTo(at.width, at.height), "setsar=1", "format=yuva444p", ...hold)
+            chain.push(scaleTo(at.width, at.height), "setsar=1", `format=yuva444p${deep}`, ...hold)
             finish(chain, at.width, at.height, at.radians ? [`rotate=a=${at.radians}:ow=rotw(${at.radians}):oh=roth(${at.radians}):c=none`] : [])
-            graph.push(`[base${layers}][${name}]overlay=x=${at.centerX}-w/2:y=${at.centerY}-h/2:format=yuv444:eof_action=pass[base${layers + 1}]`)
+            graph.push(`[base${layers}][${name}]overlay=x=${at.centerX}-w/2:y=${at.centerY}-h/2:format=${blend}:eof_action=pass[base${layers + 1}]`)
             layers++
           }
         }
@@ -358,7 +457,7 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
 
       if (dip.some((v) => v > 0)) {
         graph.push(`${solid(width, height, dip)},${place}[dip${layers}]`)
-        graph.push(`[base${layers}][dip${layers}]overlay=x=0:y=0:format=yuv444:eof_action=pass[base${layers + 1}]`)
+        graph.push(`[base${layers}][dip${layers}]overlay=x=0:y=0:format=${blend}:eof_action=pass[base${layers + 1}]`)
         layers++
       }
     }
@@ -366,8 +465,11 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
     if (piece.audio) {
       const samples = sampleAt(last) - sampleAt(first)
       const delay = sampleAt(first) - sampleAt(from)
-      const stream = piece.media?.audioStream
-      const chain = [`[${input}:a${stream === undefined ? "" : `:${stream}`}]aresample=${SAMPLE_RATE}:async=1:first_pts=0`, "aformat=sample_fmts=fltp:channel_layouts=stereo", ...tempoFilters(speed), `atrim=end_sample=${samples}`, "asetpts=PTS-STARTPTS"]
+      // The noise-free copy holds only the one stream, on the same timeline as its source.
+      const voice = clip.voice ? piece.media?.voice : undefined
+      const soundInput = voice ? addInput(["-ss", seconds(offset), "-t", reading, "-i", voice]) : input
+      const stream = voice ? undefined : piece.media?.audioStream
+      const chain = [`[${soundInput}:a${stream === undefined ? "" : `:${stream}`}]aresample=${SAMPLE_RATE}:async=1:first_pts=0`, "aformat=sample_fmts=fltp:channel_layouts=stereo", ...tempoFilters(speed), `atrim=end_sample=${samples}`, "asetpts=PTS-STARTPTS"]
       const start = timeOf(first)
       const steps = Math.max(1, Math.ceil(sec(duration) * GAIN_STEPS_PER_SECOND))
       const gains = Array.from({ length: steps + 1 }, (_, i) => {
@@ -388,14 +490,15 @@ function chunkFilter(source: RenderSource, options: ExportOptions, pieces: Piece
     }
   })
 
-  const pixelFormat = options.codec === "prores" ? "yuv422p10le" : "yuv420p"
-  graph.push(`[base${layers}]format=${pixelFormat},setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709[video]`)
+  const pixelFormat = options.codec === "prores" ? "yuv422p10le" : hdr ? "yuv420p10le" : "yuv420p"
+  const tags = hdr ? "color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" : "color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+  if (withVideo) graph.push(`[base${layers}]format=${pixelFormat},setparams=range=tv:${tags}[video]`)
   if (audioStreams) {
     const samples = sampleAt(to) - sampleAt(from)
     const mix = sounds.length ? `${sounds.join("")}amix=inputs=${sounds.length}:normalize=0:dropout_transition=0:duration=longest,` : `anullsrc=r=${SAMPLE_RATE}:cl=stereo,`
     graph.push(`${mix}apad,atrim=end_sample=${samples},asetpts=PTS-STARTPTS[audio]`)
   }
-  return { graph: graph.join(";\n"), inputs }
+  return { graph: graph.join(";\n"), inputs, opened }
 }
 
 /**
@@ -409,13 +512,46 @@ export function planRender(source: RenderSource, options: ExportOptions): Render
 
   const pieces = buildPieces(source, options, frameLength)
   const anyAudio = pieces.some((p) => p.audio)
-  const ranges = chunkRanges(pieces, frames)
+  const spans = options.smart && options.codec === "h264" && !options.hdr ? copySpans(options, pieces, frameLength) : []
+  const ranges: { from: number; to: number; copy?: CopySpan }[] = []
+  let done = 0
+  for (const span of spans) {
+    ranges.push(...chunkRanges(pieces, done, span.first).map(([from, to]) => ({ from, to })), { from: span.first, to: span.last, copy: span })
+    done = span.last
+  }
+  ranges.push(...chunkRanges(pieces, done, frames).map(([from, to]) => ({ from, to })))
   const files: RenderPlan["files"] = []
   const steps: string[][] = []
   const weights: number[] = []
+  const audioArgs = anyAudio ? ["-map", "[audio]", "-c:a", "pcm_s24le", "-ar", String(SAMPLE_RATE)] : []
 
-  ranges.forEach(([from, to], i) => {
+  ranges.forEach(({ from, to, copy }, i) => {
     const used = pieces.filter((p) => p.first < to && p.last > from)
+    if (copy) {
+      // The picture comes straight from the recording, from a keyframe on; only the sound goes through a filter.
+      const { graph, inputs, opened } = chunkFilter(source, options, used, from, to, anyAudio, frameLength, false)
+      if (anyAudio) files.push({ name: `chunk${i}.filter`, text: graph })
+      steps.push([
+        ...COMMON,
+        ...inputs,
+        "-ss",
+        copy.at.toFixed(6),
+        "-i",
+        copy.piece.media!.path,
+        ...(anyAudio ? ["-/filter_complex", `{work}/chunk${i}.filter`] : []),
+        // Picture first, as in every other chunk: the join pairs streams up by their order.
+        "-map",
+        `${opened}:v:0`,
+        "-c:v",
+        "copy",
+        ...audioArgs,
+        "-frames:v",
+        String(to - from),
+        `{work}/chunk${i}.mov`,
+      ])
+      weights.push((to - from) * 0.05)
+      return
+    }
     const { graph, inputs } = chunkFilter(source, options, used, from, to, anyAudio, frameLength)
     files.push({ name: `chunk${i}.filter`, text: graph })
     steps.push([
@@ -425,11 +561,11 @@ export function planRender(source: RenderSource, options: ExportOptions): Render
       `{work}/chunk${i}.filter`,
       "-map",
       "[video]",
-      ...(anyAudio ? ["-map", "[audio]", "-c:a", "pcm_s24le", "-ar", String(SAMPLE_RATE)] : []),
+      ...audioArgs,
       "-frames:v",
       String(to - from),
       ...encoderArgs(options),
-      ...COLOR,
+      ...(isHdrExport(options) ? HDR_COLOR : COLOR),
       `{work}/chunk${i}.mov`,
     ])
     weights.push(to - from)
@@ -459,5 +595,5 @@ export function planRender(source: RenderSource, options: ExportOptions): Render
   weights.push(Math.max(1, frames * 0.03))
 
   const total = weights.reduce((a, b) => a + b, 0)
-  return { steps, weights: weights.map((w) => w / total), files, result, frames }
+  return { steps, weights: weights.map((w) => w / total), files, result, frames, copied: spans.reduce((sum, span) => sum + span.last - span.first, 0) }
 }

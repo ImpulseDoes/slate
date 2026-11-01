@@ -262,3 +262,129 @@ pub async fn render_probe(path: String) -> Result<StreamInfo, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyInfo {
+    width: u32,
+    height: u32,
+    rate_num: u64,
+    rate_den: u64,
+    /// Only where a copy can start or end cleanly.
+    keyframes: Vec<Keyframe>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Keyframe {
+    /// Seconds from the start the way `-ss` counts them, exactly where the packet sits.
+    at: f64,
+    /// The same moment on the frame grid. Matroska keeps whole milliseconds, which wobble around it.
+    time: f64,
+}
+
+const RATES: [(u64, u64); 14] = [(24000, 1001), (24, 1), (25, 1), (30000, 1001), (30, 1), (48, 1), (50, 1), (60000, 1001), (60, 1), (100, 1), (120000, 1001), (120, 1), (144, 1), (240, 1)];
+
+/// Size and start time of an H.264 recording in 8-bit 4:2:0 at limited range, the only kind an export can take as it is.
+fn copyable(header: &str) -> Option<(u32, u32, f64)> {
+    let video = header.lines().find(|line| line.contains("Stream #") && line.contains("Video: "))?;
+    let details = video.split("Video: ").nth(1)?;
+    let pixel = details.split(',').nth(1)?.trim();
+    if !details.starts_with("h264") || !(pixel == "yuv420p" || pixel.starts_with("yuv420p(")) || pixel.starts_with("yuv420p(pc") {
+        return None;
+    }
+    let start = header
+        .lines()
+        .find_map(|line| line.split("start: ").nth(1))
+        .and_then(|rest| rest.split(',').next()?.trim().parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let (width, height) = details.split(',').find_map(|part| {
+        let (w, h) = part.split_whitespace().next()?.split_once('x')?;
+        Some((w.parse().ok()?, h.parse().ok()?))
+    })?;
+    Some((width, height, start))
+}
+
+/// Whether the recording can be copied into an export, and from which keyframes: it must run at
+/// a standard rate with no frame dropped, and a keyframe counts only if it starts a closed group.
+fn copy_info(header: &str, packets: &str) -> Option<CopyInfo> {
+    let (width, height, start) = copyable(header)?;
+    let (tb_num, tb_den) = packets.lines().find_map(|line| line.strip_prefix("#tb 0: "))?.trim().split_once('/')?;
+    let tb = tb_num.parse::<f64>().ok()? / tb_den.parse::<f64>().ok()?;
+    // stream, dts, pts, duration, size, crc[, F=flags]: the flags are left out for a plain keyframe.
+    let list: Vec<(i64, bool)> = packets
+        .lines()
+        .filter(|line| line.starts_with("0,"))
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+            let flags = fields.get(6).and_then(|f| f.strip_prefix("F=0x")).map_or(Some(1), |hex| i64::from_str_radix(hex, 16).ok())?;
+            Some((fields.get(2)?.parse().ok()?, flags & 1 == 1))
+        })
+        .collect();
+    let mut shown: Vec<i64> = list.iter().map(|p| p.0).collect();
+    shown.sort_unstable();
+    let (first, last) = (*shown.first()?, *shown.last()?);
+    if shown.len() < 2 || last == first {
+        return None;
+    }
+    let measured = (shown.len() - 1) as f64 / ((last - first) as f64 * tb);
+    let off = |&(n, d): &(u64, u64)| ((n as f64 / d as f64) / measured - 1.0).abs();
+    let &(num, den) = RATES.iter().min_by(|a, b| off(a).total_cmp(&off(b))).filter(|rate| off(rate) < 0.002)?;
+    let rate = num as f64 / den as f64;
+    let frame_of = |pts: i64| (pts - first) as f64 * tb * rate;
+    if shown.iter().enumerate().any(|(i, &pts)| (frame_of(pts) - i as f64).abs() > 0.4) {
+        return None;
+    }
+    let keyframes = list
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| p.1 && list[i + 1..].iter().take_while(|q| !q.1).all(|q| q.0 > p.0))
+        .map(|(_, p)| Keyframe { at: p.0 as f64 * tb - start, time: first as f64 * tb - start + frame_of(p.0).round() / rate })
+        .collect();
+    Some(CopyInfo { width, height, rate_num: num, rate_den: den, keyframes })
+}
+
+#[tauri::command]
+pub async fn render_copy_info(path: String) -> Result<Option<CopyInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let header = ffmpeg().args(["-hide_banner", "-i", &path]).output().map_err(start_failed)?;
+        let header = String::from_utf8_lossy(&header.stderr).into_owned();
+        if copyable(&header).is_none() {
+            return Ok(None);
+        }
+        // Reads every packet without decoding any, so even an hour of video takes seconds.
+        let packets = ffmpeg().args(["-hide_banner", "-v", "error", "-i", &path, "-map", "0:v:0", "-c", "copy", "-f", "framecrc", "-"]).output().map_err(start_failed)?;
+        Ok(copy_info(&header, &String::from_utf8_lossy(&packets.stdout)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_clean_keyframes() {
+        let header = "  Duration: 00:00:10.00, start: 0.000000, bitrate: 1 kb/s\n  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], 60 fps\n";
+        let packets = "#tb 0: 1/15360\n0, -512, 0, 256, 1, 0x1\n0, -256, 512, 256, 1, 0x2, F=0x0\n0, 0, 256, 256, 1, 0x3, F=0x0\n0, 256, 1024, 256, 1, 0x4\n0, 512, 768, 256, 1, 0x5, F=0x0\n0, 768, 1280, 256, 1, 0x6, F=0x0\n";
+        let info = copy_info(header, packets).unwrap();
+        assert_eq!((info.width, info.height, info.rate_num, info.rate_den), (1280, 720, 60, 1));
+        // The second keyframe has a frame shown before it that's decoded after it: an open group.
+        assert_eq!(info.keyframes, vec![Keyframe { at: 0.0, time: 0.0 }]);
+        assert!(copy_info(&header.replace("h264", "hevc"), packets).is_none());
+        assert!(copy_info(&header.replace("yuv420p(tv", "yuv420p(pc"), packets).is_none());
+    }
+
+    #[test]
+    fn reads_matroska_milliseconds() {
+        let header = "  Duration: 00:00:10.00, start: 0.000000, bitrate: 1 kb/s\n  Stream #0:0: Video: h264 (High), yuv420p(tv, bt709, progressive), 1920x1080, 60 fps\n";
+        let pts: Vec<i64> = (0..120).map(|i| (i as f64 * 1000.0 / 60.0).round() as i64).collect();
+        let packets: String = std::iter::once("#tb 0: 1/1000\n".to_string())
+            .chain(pts.iter().enumerate().map(|(i, p)| format!("0, {p}, {p}, 17, 1, 0x0{}\n", if i % 60 == 0 { "" } else { ", F=0x0" })))
+            .collect();
+        let info = copy_info(header, &packets).unwrap();
+        assert_eq!((info.rate_num, info.rate_den), (60, 1));
+        assert_eq!(info.keyframes.len(), 2);
+        assert_eq!(info.keyframes[1].at, 1.0);
+        assert!((info.keyframes[1].time - 1.0).abs() < 1e-9);
+    }
+}

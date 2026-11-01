@@ -17,6 +17,11 @@ use crate::render::{Renders, ffmpeg, start_failed};
 const MAX_TEXT_BYTES: u64 = 16 * 1024 * 1024;
 // Raising it makes every proxy again, for when their settings change.
 const PROXY_VERSION: u8 = 2;
+// RNNoise's beguiling-drafter model: keeps voice, laughter included, and drops the noise of a home recording.
+const VOICE_MODEL: &str = "voice.rnnn";
+const VOICE_FILTER: &str = "highpass=f=70,arnndn=m=voice.rnnn";
+// HDR to SDR, the same as the export's: SDR white at 203 nits lands near white, highlights roll off.
+const TONE_MAP: &str = "zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=mobius:param=0.5:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +29,8 @@ pub struct MediaInfo {
     video_codec: Option<String>,
     pixel_format: Option<String>,
     audio_codecs: Vec<String>,
+    /// "pq" or "hlg" for an HDR recording.
+    hdr: Option<String>,
     duration: f64,
     width: u32,
     height: u32,
@@ -65,6 +72,15 @@ fn parse_info(text: &str) -> MediaInfo {
         video_codec: video.clone().map(codec),
         pixel_format: video.and_then(|rest| Some(rest.split(',').nth(1)?.trim().split('(').next()?.to_string())),
         audio_codecs: streams().filter_map(|line| after(line, "Audio: ")).map(codec).collect(),
+        hdr: streams().find(|line| line.contains("Video: ")).and_then(|line| {
+            if line.contains("smpte2084") {
+                Some("pq".into())
+            } else if line.contains("arib-std-b67") {
+                Some("hlg".into())
+            } else {
+                None
+            }
+        }),
         duration: parse_duration(text),
     }
 }
@@ -89,16 +105,21 @@ fn proxy_key(path: &Path, mode: &str, stream: Option<u32>) -> Result<String, Str
     Ok(format!("{:016x}", hasher.finish()))
 }
 
-fn proxy_args(source: &str, mode: &str, stream: Option<u32>, copy_audio: bool, target: &Path) -> Vec<String> {
+fn proxy_args(source: &str, mode: &str, stream: Option<u32>, copy_audio: bool, tone_map: bool, target: &Path) -> Vec<String> {
     let mut args: Vec<String> = ["-hide_banner", "-nostdin", "-y", "-v", "error", "-progress", "pipe:1", "-nostats", "-i", source].map(String::from).to_vec();
     let aac = ["-c:a", "aac", "-b:a", "192k"].map(String::from);
-    if let Some(stream) = stream {
+    if mode == "voice" {
+        args.extend(["-map".into(), format!("0:a:{}", stream.unwrap_or(0)), "-vn".into(), "-af".into(), VOICE_FILTER.into()]);
+        args.extend(["-c:a", "aac", "-b:a", "256k"].map(String::from));
+    } else if let Some(stream) = stream {
         args.extend(["-map".into(), format!("0:a:{stream}"), "-vn".into()]);
         args.extend(aac);
     } else {
         args.extend(["-map", "0:v:0", "-map", "0:a:0?"].map(String::from));
         if mode == "transcode" {
-            args.extend(["-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-g", "30", "-crf", "26", "-pix_fmt", "yuv420p"].map(String::from));
+            let scale = "scale=-2:'min(720,ih)'";
+            args.extend(["-vf".into(), if tone_map { format!("{TONE_MAP},{scale}") } else { scale.into() }]);
+            args.extend(["-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode", "-g", "30", "-crf", "26", "-pix_fmt", "yuv420p"].map(String::from));
         } else {
             args.extend(["-c:v", "copy"].map(String::from));
         }
@@ -134,15 +155,20 @@ pub fn run_ffmpeg(app: &AppHandle, renders: &Renders, event: &str, id: &str, key
     result
 }
 
+/// A tone-mapped copy gets a key of its own, so one made before HDR was handled isn't reused.
+fn cache_mode(mode: &str, tone_map: bool) -> String {
+    if tone_map { format!("{mode}-sdr") } else { mode.to_string() }
+}
+
 fn proxy_target(app: &AppHandle, path: &Path, mode: &str, stream: Option<u32>) -> Result<PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("proxies");
-    let extension = if stream.is_some() { "m4a" } else { "mp4" };
+    let extension = if stream.is_some() || mode == "voice" { "m4a" } else { "mp4" };
     Ok(dir.join(format!("{}.{extension}", proxy_key(path, mode, stream)?)))
 }
 
 #[tauri::command]
-pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Option<u32>) -> Result<Option<String>, String> {
-    let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
+pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Option<u32>, tone_map: Option<bool>) -> Result<Option<String>, String> {
+    let target = proxy_target(&app, Path::new(&path), &cache_mode(&mode, tone_map.unwrap_or(false)), audio_stream)?;
     if !target.is_file() {
         return Ok(None);
     }
@@ -152,23 +178,40 @@ pub fn media_cached(app: AppHandle, path: String, mode: String, audio_stream: Op
 
 /// A copy the webview can play and seek quickly, kept in the cache. Export never reads it, it uses the original.
 #[tauri::command]
-pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String, path: String, mode: String, audio_stream: Option<u32>, copy_audio: bool, duration: f64) -> Result<String, String> {
-    let target = proxy_target(&app, Path::new(&path), &mode, audio_stream)?;
+pub async fn media_proxy(app: AppHandle, renders: State<'_, Renders>, id: String, path: String, mode: String, audio_stream: Option<u32>, copy_audio: bool, tone_map: Option<bool>, duration: f64) -> Result<String, String> {
+    let tone_map = tone_map.unwrap_or(false);
+    let keyed = cache_mode(&mode, tone_map);
+    let target = proxy_target(&app, Path::new(&path), &keyed, audio_stream)?;
     if target.is_file() {
         proxy_cache::touch(&target);
         return Ok(target.to_string_lossy().into_owned());
     }
     let dir = target.parent().ok_or("No cache folder.")?;
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let key = proxy_key(Path::new(&path), &mode, audio_stream)?;
+    let key = proxy_key(Path::new(&path), &keyed, audio_stream)?;
     let extension = target.extension().unwrap_or_default().to_string_lossy();
     let partial = dir.join(format!("{key}.part.{extension}"));
-    let args = proxy_args(&path, &mode, audio_stream, copy_audio, &partial);
+    let args = proxy_args(&path, &mode, audio_stream, copy_audio, tone_map, &partial);
+    // The filter finds its model by a bare name, which saves escaping a Windows path inside the filter.
+    let model_dir = if mode == "voice" {
+        let dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("resources");
+        if !dir.join(VOICE_MODEL).is_file() {
+            return Err("voice-model-missing".into());
+        }
+        Some(dir)
+    } else {
+        None
+    };
     let renders = (*renders).clone();
     let handle = app.clone();
     let (made, partial_for_task) = (target.clone(), partial.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        let result = run_ffmpeg(&handle, &renders, "proxy-progress", &id, &key, ffmpeg().args(&args), duration).and_then(|_| fs::rename(&partial_for_task, &made).map_err(|e| e.to_string()));
+        let mut command = ffmpeg();
+        command.args(&args);
+        if let Some(dir) = model_dir {
+            command.current_dir(dir);
+        }
+        let result = run_ffmpeg(&handle, &renders, "proxy-progress", &id, &key, &mut command, duration).and_then(|_| fs::rename(&partial_for_task, &made).map_err(|e| e.to_string()));
         if result.is_err() {
             let _ = fs::remove_file(&partial_for_task);
         }

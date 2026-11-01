@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # Builds the FFmpeg that Slate bundles on macOS and Linux: one self-contained
-# program with x264, x265, dav1d and the whisper filter that automatic captions
+# program with x264, x265, dav1d, zimg for HDR and the whisper filter that automatic captions
 # run on. Windows gets a ready-made build instead (scripts/fetch-ffmpeg.ts), but
 # nobody publishes one with whisper for these two systems
 #
 #   scripts/build-ffmpeg.sh <output file>
 #
-# Needs a C/C++ compiler, make, cmake, meson, ninja, pkg-config and curl, plus
+# Needs a C/C++ compiler, make, autotools, cmake, meson, ninja, pkg-config and curl, plus
 # nasm on x86_64. Runs on the bash 3.2 macOS ships. Set WORK to keep the sources and libraries between runs
 
 set -euo pipefail
@@ -20,6 +20,8 @@ X265_VERSION=4.1
 X265_SHA256=a31699c6a89806b74b0151e5e6a7df65de4b49050482fe5ebf8a4379d7af8f29
 DAV1D_VERSION=1.5.4
 DAV1D_SHA256=686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5
+ZIMG_VERSION=3.0.6
+ZIMG_SHA256=be89390f13a5c9b2388ce0f44a5e89364a20c1c57ce46d382b1fcc3967057577
 WHISPER_VERSION=1.9.5
 WHISPER_SHA256=ff1a9053feb509ff9d7729703355541ae9690073a6b1c40eb692c962e0dc1720
 
@@ -85,6 +87,21 @@ meson setup "$work/build-dav1d" "$work/src/dav1d-$DAV1D_VERSION" --prefix="$pref
   --buildtype=release --default-library=static -Denable_tools=false -Denable_tests=false
 ninja -C "$work/build-dav1d" install
 
+step "zimg"
+fetch "https://github.com/sekrit-twc/zimg/archive/refs/tags/release-$ZIMG_VERSION.tar.gz" $ZIMG_SHA256 zimg.tar.gz
+(
+  cd "$work/src/zimg-release-$ZIMG_VERSION"
+  # Homebrew installs GNU libtoolize as glibtoolize, beside Apple's own libtool.
+  if command -v glibtoolize >/dev/null; then export LIBTOOLIZE=glibtoolize; fi
+  ./autogen.sh
+  # Its .pc names the C++ runtime a static link needs, libstdc++ unless told otherwise.
+  stl=-lstdc++
+  [ "$os" = Darwin ] && stl=-lc++
+  STL_LIBS=$stl ./configure --prefix="$prefix" --libdir="$prefix/lib" --enable-static --disable-shared --with-pic
+  make -j"$jobs"
+  make install
+)
+
 step "whisper.cpp"
 fetch "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v$WHISPER_VERSION.tar.gz" $WHISPER_SHA256 whisper.tar.gz
 whisper_flags=()
@@ -125,7 +142,7 @@ fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" $FFMPEG_SHA256
     --extra-cflags="-I$prefix/include" --extra-ldflags="-L$prefix/lib" \
     --disable-autodetect --enable-pthreads --enable-zlib \
     --enable-gpl --enable-version3 \
-    --enable-libx264 --enable-libx265 --enable-libdav1d --enable-whisper \
+    --enable-libx264 --enable-libx265 --enable-libdav1d --enable-libzimg --enable-whisper \
     --disable-ffplay --disable-ffprobe --disable-doc --disable-debug \
     --enable-static --disable-shared
   make -j"$jobs"
@@ -138,7 +155,7 @@ strip "$out"
 
 step "Check"
 "$out" -hide_banner -version | head -1
-for need in "filters: whisper" "encoders: libx264" "encoders: libx265" "decoders: libdav1d" "encoders: prores_ks"; do
+for need in "filters: whisper" "filters: zscale" "filters: tonemap" "filters: arnndn" "encoders: libx264" "encoders: libx265" "decoders: libdav1d" "encoders: prores_ks"; do
   list=${need%%:*}
   name=${need#*: }
   if ! "$out" -hide_banner -"$list" 2>/dev/null | grep -qw "$name"; then

@@ -7,6 +7,7 @@ import {
   ColorPickerIcon,
   DashboardSpeed01Icon,
   Layers01Icon,
+  Mic01Icon,
   Move01Icon,
   MoveHorizontalIcon,
   MoveVerticalIcon,
@@ -23,6 +24,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { keyedPropsAt, keyNear } from "../../lib/animation"
 import { MAX_VOLUME } from "../../lib/audio/tools"
+import { canIsolateVoice, setVoice } from "../../lib/audio/voice"
 import { canDetachAudio, clipEnd, DEFAULT_PROPS, MAX_SPEED, MIN_SPEED, sourceAt, speedOf } from "../../lib/clips"
 import { useT } from "../../lib/i18n"
 import { isTauri } from "../../lib/platform"
@@ -205,6 +207,7 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
         {tab === "audio" && (
           <>
             <PropertyRow icon={VolumeHighIcon} label={t("inspector.volume")} value={p.volume} onBegin={checkpoint} onChange={(volume) => set({ volume })} min={0} max={MAX_VOLUME} step={0.5} unit="%" keyframe={keyFor("volume")} />
+            {canIsolateVoice(clip, media) && <VoiceRow clip={clip} media={media!} disabled={locked} />}
             <ResetRow onReset={() => (checkpoint(), set({ volume: DEFAULT_PROPS.volume }))}>
               {canDetachAudio(clip, media) && (
                 <Button icon={AudioWave01Icon} onClick={detachAudio} disabled={locked}>
@@ -251,6 +254,41 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
           </>
         )}
       </div>
+    </>
+  )
+}
+
+function VoiceRow({ clip, media, disabled }: { clip: Clip; media: MediaItem; disabled: boolean }) {
+
+  const t = useT()
+  const on = !!clip.voice
+  const progress = media.voiceProgress
+  const option = (value: boolean, label: string) => (
+    <button
+      aria-pressed={on === value}
+      disabled={disabled}
+      onClick={() => on !== value && setVoice(clip.id, value)}
+      className={`h-7 flex-1 rounded-sm text-body transition-colors disabled:opacity-40 ${on === value ? "bg-surface text-fg shadow-control ring-1 ring-border" : "text-label hover:text-fg"}`}
+    >
+      {label}
+    </button>
+  )
+
+  return (
+    <>
+      <div className="flex h-8 items-center">
+        <span className="flex w-[112px] shrink-0 items-center gap-2 text-label">
+          <Icon icon={Mic01Icon} />
+          <span className="truncate">{t("voice.isolate")}</span>
+        </span>
+        <div className="flex flex-1 gap-0.5 rounded-md bg-raised p-0.5">
+          {option(false, t("voice.off"))}
+          {option(true, t("voice.on"))}
+        </div>
+      </div>
+      {on && (progress !== undefined || media.voice) && (
+        <p className="text-small text-muted tnum">{progress !== undefined ? t("voice.working", { percent: Math.round(progress * 100) }) : t("voice.ready")}</p>
+      )}
     </>
   )
 }

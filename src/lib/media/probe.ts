@@ -30,6 +30,7 @@ async function convert(item: MediaItem, mode: ProxyMode, info: MediaInfo): Promi
       mode,
       audioStream: item.audioStream ?? null,
       copyAudio: info.audioCodecs[0] === "aac",
+      toneMap: mode === "transcode" && !!info.hdr,
       duration: info.duration,
     })
     const patch = { proxy, src: convertFileSrc(proxy), progress: undefined }
@@ -80,7 +81,9 @@ async function prepare(item: MediaItem): Promise<{ item: MediaItem; info: MediaI
 
   addCompanions(item, info)
 
-  const cached = await invoke<string | null>("media_cached", { path: item.path, mode: "transcode", audioStream: null }).catch(() => null)
+  if (info.hdr) update(item.id, { hdr: info.hdr })
+
+  const cached = await invoke<string | null>("media_cached", { path: item.path, mode: "transcode", audioStream: null, toneMap: !!info.hdr }).catch(() => null)
 
   if (cached) return { item: playFrom(item, cached), info }
 

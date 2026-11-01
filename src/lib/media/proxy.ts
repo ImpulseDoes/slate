@@ -2,6 +2,7 @@ export interface MediaInfo {
   videoCodec: string | null
   pixelFormat: string | null
   audioCodecs: string[]
+  hdr: "pq" | "hlg" | null
   duration: number
   width: number
   height: number
@@ -24,6 +25,8 @@ export function proxyMode(path: string, info: MediaInfo): ProxyMode {
   const plainAudio = !info.audioCodecs[0] || PLAYABLE_AUDIO.includes(info.audioCodecs[0])
 
   if (!codec) return "none"
+  // The webview would show HDR washed out or too dark: the copy is tone-mapped the way the export is.
+  if (info.hdr) return "transcode"
   if (PLAYABLE_FILES.includes(extension) && PLAYABLE_VIDEO.includes(codec) && eightBit && plainAudio) return "none"
 
   return COPYABLE_VIDEO.includes(codec) && eightBit ? "remux" : "transcode"

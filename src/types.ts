@@ -20,6 +20,12 @@ export interface MediaItem {
   audioStream?: number
   /** Media ids of those extra tracks, placed on the timeline together with the video. */
   companions?: string[]
+  /** How an HDR recording encodes brightness. The viewer plays a tone-mapped copy. */
+  hdr?: "pq" | "hlg"
+  /** The sound with the noise taken out, for clips that isolate the voice. Rebuilt from the cache, never saved. */
+  voice?: string
+  voiceSrc?: string
+  voiceProgress?: number
   /** Progress of a running conversion, 0 to 1. */
   progress?: number
   status: "loading" | "ready" | "error" | "missing"
@@ -105,6 +111,8 @@ export interface Clip {
   linkId?: string
   /** Playback rate: 2 plays twice as fast, so the clip covers twice as much of its source. */
   speed?: number
+  /** Plays the noise-free copy of the sound, in the viewer and the export alike. */
+  voice?: boolean
   keys?: Keyframes
   enter?: Transition
   exit?: Transition

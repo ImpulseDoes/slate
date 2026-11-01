@@ -52,6 +52,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const [quality, setQuality] = useState("high")
   const [mbps, setMbps] = useState(12)
   const [speed, setSpeed] = useState<Speed>("medium")
+  const [smart, setSmart] = useState("on")
+  const [dynamicRange, setDynamicRange] = useState("sdr")
+  const hasHdr = useEditor((s) => s.media.some((m) => m.hdr && s.clips.some((c) => c.mediaId === m.id)))
   const [rangeKind, setRangeKind] = useState("all")
   const [customFrom, setCustomFrom] = useState(0)
   const [customTo, setCustomTo] = useState(Math.round(sec(duration) * 100) / 100)
@@ -91,7 +94,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   const start = async () => {
     const q: Quality = quality === "bitrate" ? { mode: "bitrate", mbps } : { mode: "quality", crf: CRF[quality as keyof typeof CRF] }
-    const options: ExportOptions = { codec, ...size, fps, quality: q, speed, range }
+    const options: ExportOptions = { codec, ...size, fps, quality: q, speed, range, smart: codec === "h264" && smart === "on", hdr: codec === "h265" && dynamicRange === "hdr" }
     setBusy(true)
     setError(null)
     try {
@@ -188,6 +191,32 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             </Field>
           </>
         )}
+        {codec === "h265" && (
+          <Field label={t("export.dynamicRange")}>
+            <Select
+              label={t("export.dynamicRange")}
+              value={dynamicRange}
+              onChange={setDynamicRange}
+              options={[
+                { id: "sdr", label: t("export.sdr") },
+                { id: "hdr", label: t("export.hdr") },
+              ]}
+            />
+          </Field>
+        )}
+        {codec === "h264" && (
+          <Field label={t("export.smart")}>
+            <Select
+              label={t("export.smart")}
+              value={smart}
+              onChange={setSmart}
+              options={[
+                { id: "on", label: t("export.smart.on") },
+                { id: "off", label: t("export.smart.off") },
+              ]}
+            />
+          </Field>
+        )}
         <Field label={t("export.range")}>
           <Select
             label={t("export.range")}
@@ -217,6 +246,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           <Button onClick={() => openDialog("vertical")}>{t("tools.vertical")}</Button>
         </p>
       )}
+      {hasHdr && !(codec === "h265" && dynamicRange === "hdr") && <p className="mt-4 text-body text-label">{t("export.hdrToSdr")}</p>}
       {(blocker || error) && <p className="mt-4 text-body text-error">{error ?? blocker}</p>}
     </Modal>
   )

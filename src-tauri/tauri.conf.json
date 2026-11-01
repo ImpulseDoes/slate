@@ -37,6 +37,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": [
+      "resources/voice.rnnn"
+    ],
     "externalBin": [
       "binaries/ffmpeg"
     ],

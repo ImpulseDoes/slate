@@ -39,6 +39,7 @@ pub fn run() {
             render::render_cancel,
             render::render_encoders,
             render::render_probe,
+            render::render_copy_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

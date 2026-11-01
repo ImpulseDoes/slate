@@ -101,7 +101,14 @@ export function MediaRow({ item }: { item: MediaItem }) {
               </StatusTag>
             </Tip>
           ) : (
-            <TypeChip type={item.kind} compact />
+            <>
+              <TypeChip type={item.kind} compact />
+              {item.hdr && (
+                <Tip label={t("media.hdrTip")}>
+                  <span className="inline-flex h-5 shrink-0 items-center rounded-xs bg-raised px-1 font-semibold text-caps text-label">HDR</span>
+                </Tip>
+              )}
+            </>
           )}
           {item.status === "loading" && <span className="tnum text-small text-muted">{item.progress === undefined ? t("media.reading") : t("media.converting", { percent: Math.round(item.progress * 100) })}</span>}
           {ready && item.kind !== "image" && (

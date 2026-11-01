@@ -20,6 +20,7 @@ import { usePlaybackClock } from "./hooks/usePlaybackClock"
 import { useShortcuts } from "./hooks/useShortcuts"
 import { useT } from "./lib/i18n"
 import { trackPointer } from "./lib/pointer"
+import { watchVoice } from "./lib/audio/voice"
 import { startSession } from "./lib/project/session"
 import { openDialog, useOverlays } from "./store/overlays"
 import { listenForRenderProgress } from "./store/renders"
@@ -42,6 +43,7 @@ export default function App() {
   useEffect(() => {
     startSession()
     listenForRenderProgress()
+    watchVoice()
   }, [])
 
   const startResize = (e: React.PointerEvent) => {
