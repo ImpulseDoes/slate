@@ -57,7 +57,7 @@ export function Transport() {
       </div>
       <div className="flex w-36 items-center justify-end gap-2">
         <Tip label={t(recording ? "record.stop" : "record.start")} kbd="R">
-          <Button variant="quiet" icon={Mic01Icon} onClick={toggleRecording} disabled={saving} aria-pressed={recording} aria-label={t(recording ? "record.stop" : "record.start")} className={recording ? "text-error hover:text-error" : ""} />
+          <Button variant="quiet" icon={Mic01Icon} onClick={toggleRecording} disabled={saving} aria-pressed={recording} aria-label={t(recording ? "record.stop" : "record.start")} className={recording ? "bg-danger-soft! text-error!" : ""} />
         </Tip>
         <Tip label={t("viewer.guides")} kbd="G">
           <Button variant="quiet" icon={CrosshairIcon} active={showGuides} onClick={toggleGuides} onContextMenu={(e) => openMenu(e, guideColorEntries())} aria-pressed={showGuides} aria-label={t("viewer.guides")} />

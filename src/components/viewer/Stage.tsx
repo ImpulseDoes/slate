@@ -13,6 +13,7 @@ import { GUIDE_COLORS, guideColor, setGuideColor, usePrefs } from "../../store/p
 import type { Clip } from "../../types"
 import { Layer } from "./Layer"
 import { assignPlayers } from "./players"
+import { RecordingBadge } from "./RecordingBadge"
 import { SyncedMedia } from "./SyncedMedia"
 
 const PRELOAD = ticks(1.5)
@@ -69,6 +70,7 @@ export function Stage() {
 
   return (
     <div onContextMenu={stageMenu} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-viewer shadow-card [container-type:size]">
+      <RecordingBadge />
       <div ref={frame} className="relative overflow-hidden bg-black [container-type:inline-size]" style={{ aspectRatio: `${settings.width} / ${settings.height}`, width: `min(100cqw, 100cqh * ${settings.width / settings.height})` }}>
         {videoTracks.map((t, z) =>
           byStart
