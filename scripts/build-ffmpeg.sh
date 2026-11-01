@@ -94,8 +94,8 @@ fetch "https://github.com/sekrit-twc/zimg/archive/refs/tags/release-$ZIMG_VERSIO
   # Homebrew installs GNU libtoolize as glibtoolize, beside Apple's own libtool.
   if command -v glibtoolize >/dev/null; then export LIBTOOLIZE=glibtoolize; fi
   ./autogen.sh
-  # Its .pc names the C++ runtime a static link needs, libstdc++ unless told otherwise.
-  stl=-lstdc++
+  # Its .pc names only the C++ runtime a static link needs, and on Linux zimg's math calls need libm named too.
+  stl="-lstdc++ -lm"
   [ "$os" = Darwin ] && stl=-lc++
   STL_LIBS=$stl ./configure --prefix="$prefix" --libdir="$prefix/lib" --enable-static --disable-shared --with-pic
   make -j"$jobs"
@@ -144,7 +144,11 @@ fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" $FFMPEG_SHA256
     --enable-gpl --enable-version3 \
     --enable-libx264 --enable-libx265 --enable-libdav1d --enable-libzimg --enable-whisper \
     --disable-ffplay --disable-ffprobe --disable-doc --disable-debug \
-    --enable-static --disable-shared
+    --enable-static --disable-shared || {
+    # It says "not found" even for a library that only failed to link; the real error is in this log.
+    tail -n 40 ffbuild/config.log >&2
+    exit 1
+  }
   make -j"$jobs"
   mkdir -p "$(dirname "$out")"
   cp ffmpeg "$out"

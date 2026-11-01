@@ -15,13 +15,43 @@ defaults:
     shell: bash
 
 jobs:
-  build:
-    name: ${{ matrix.name }}
+  version:
+    name: Version
     if: >-
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/') ||
       contains(join(github.event.commits.*.message, ' '), '--build') ||
       contains(github.event.pull_request.title, '--build')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A tag like v1.2.3 names the version. Otherwise it's major.minor from tauri.conf.json and the
+      # commit count, which never repeats on main and stays the same when a run is repeated.
+      - id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+          else
+            base=$(jq -r .version src-tauri/tauri.conf.json)
+            version=${base%.*}.$(git rev-list --count HEAD)
+          fi
+          publish=false
+          if [[ $GITHUB_REF == refs/tags/v* || $GITHUB_REF == refs/heads/main ]]; then
+            publish=true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "Version $version, publish: $publish"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -113,13 +143,17 @@ jobs:
           ls src-tauri/icons
 
       - name: Build the app
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          args=()
-          # A tag like v1.2.3 sets the version the installers carry.
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            args=(--config "{\"version\":\"${GITHUB_REF_NAME#v}\"}")
-          fi
-          bun run tauri build "${args[@]}"
+          bun -e '
+            const fs = require("fs")
+            const file = "src-tauri/tauri.conf.json"
+            const config = JSON.parse(fs.readFileSync(file, "utf8"))
+            config.version = process.env.VERSION
+            fs.writeFileSync(file, JSON.stringify(config, null, 2))
+          '
+          bun run tauri build
 
       - name: Collect installers
         run: |
@@ -139,15 +173,20 @@ jobs:
           name: slate-${{ matrix.id }}
           path: out/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
-  checksum:
-    name: Checksums
-    needs: build
+  # Runs only when every platform built, so a release is never missing an installer.
+  release:
+    name: Release
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v8
         with:
           pattern: slate-*
@@ -160,24 +199,31 @@ jobs:
           sha256sum -- * > checksum.txt
           cat checksum.txt
 
+      # Builds that aren't released, like pull requests, stay downloadable from the run.
       - uses: actions/upload-artifact@v7
+        if: needs.version.outputs.publish != 'true'
         with:
           name: slate
           path: release/*
           if-no-files-found: error
           retention-days: 14
 
+      - name: List the commits
+        if: needs.version.outputs.publish == 'true'
+        env:
+          TAG: v${{ needs.version.outputs.version }}
+        run: bash scripts/release-notes.sh "$TAG" "$GITHUB_SHA" > notes.md
+
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: needs.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
         run: |
-          tag=$GITHUB_REF_NAME
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" release/* --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
           else
-            flags=(--title "Slate $tag" --generate-notes --verify-tag)
-            [[ $tag == *-* ]] && flags+=(--prerelease)
-            gh release create "$tag" release/* "${flags[@]}"
+            flags=(--title "Slate $TAG" --notes-file notes.md --target "$GITHUB_SHA")
+            [[ $TAG == *-* ]] && flags+=(--prerelease)
+            gh release create "$TAG" release/* "${flags[@]}"
           fi
