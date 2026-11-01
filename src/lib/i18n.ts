@@ -25,10 +25,7 @@ export const LANGUAGES: { id: Language; label: string }[] = [
 
 function initialLanguage(): Language {
   const saved = globalThis.localStorage?.getItem(STORAGE_KEY)
-  if (saved && saved in LOCALES) return saved as Language
-  const system = globalThis.navigator?.language?.toLowerCase() ?? ""
-  if (system.startsWith("pl")) return "pl"
-  return system.startsWith("en-gb") ? "en-uk" : "en-us"
+  return saved && saved in LOCALES ? (saved as Language) : "en-us"
 }
 
 export const useLanguage = create<{ language: Language }>(() => ({ language: initialLanguage() }))

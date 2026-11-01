@@ -22,7 +22,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "@hugeicons/core-free-icons"
-import { keyedPropsAt, keyNear } from "../../lib/animation"
+import { keyedPropsAt, keyNear, leadingKey } from "../../lib/animation"
 import { MAX_VOLUME } from "../../lib/audio/tools"
 import { canIsolateVoice, setVoice } from "../../lib/audio/voice"
 import { canDetachAudio, clipEnd, DEFAULT_PROPS, MAX_SPEED, MIN_SPEED, sourceAt, speedOf } from "../../lib/clips"
@@ -46,7 +46,7 @@ const DEFAULT_TRANSITION = ticks(0.5)
 export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }) {
 
   const t = useT()
-  const { checkpoint, updateClipProps, updateClipText, resetTransform, detachAudio, toggleKeyframe, setClipSpeed, setTransition, setEasing } = useEditor.getState()
+  const { checkpoint, updateClipProps, updateClipText, resetTransform, detachAudio, toggleKeyframe, clearKeyframes, setClipSpeed, setTransition, setEasing } = useEditor.getState()
   const locked = useEditor((s) => !!s.tracks.find((t) => t.id === clip.trackId)?.locked)
   const fps = useEditor((s) => s.settings.fps)
   const fonts = useEditor((s) => s.fonts)
@@ -124,9 +124,7 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
 
   const ease = (() => {
     const list = Object.values(clip.keys ?? {}).find((k) => k?.length)
-    if (!list) return "smooth"
-    const at = sourceAt(clip, now)
-    return (list.filter((k) => k.at <= at).pop() ?? list[0]).ease
+    return list ? leadingKey(list, sourceAt(clip, now)).ease : "smooth"
   })()
 
   return (
@@ -208,7 +206,7 @@ export function ClipInspector({ clip, media }: { clip: Clip; media?: MediaItem }
           <>
             <PropertyRow icon={VolumeHighIcon} label={t("inspector.volume")} value={p.volume} onBegin={checkpoint} onChange={(volume) => set({ volume })} min={0} max={MAX_VOLUME} step={0.5} unit="%" keyframe={keyFor("volume")} />
             {canIsolateVoice(clip, media) && <VoiceRow clip={clip} media={media!} disabled={locked} />}
-            <ResetRow onReset={() => (checkpoint(), set({ volume: DEFAULT_PROPS.volume }))}>
+            <ResetRow onReset={() => (clearKeyframes(clip.id, "volume"), set({ volume: DEFAULT_PROPS.volume }))}>
               {canDetachAudio(clip, media) && (
                 <Button icon={AudioWave01Icon} onClick={detachAudio} disabled={locked}>
                   {t("timeline.detach")}

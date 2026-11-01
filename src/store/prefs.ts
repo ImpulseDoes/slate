@@ -17,8 +17,41 @@ const savedGuide = () => {
   return GUIDE_COLORS.some((g) => g.id === saved) ? saved! : GUIDE_COLORS[0].id
 }
 
+export type Theme = "system" | "light" | "dark"
+
+export const THEMES: { id: Theme; label: Key }[] = [
+  { id: "system", label: "theme.system" },
+  { id: "light", label: "theme.light" },
+  { id: "dark", label: "theme.dark" },
+]
+
+const THEME_KEY = "slate.theme"
+
+const savedTheme = () => {
+  const saved = globalThis.localStorage?.getItem(THEME_KEY)
+  return THEMES.find((theme) => theme.id === saved)?.id ?? "system"
+}
+
 /** Settings of the app itself, kept on this computer rather than in the project. */
-export const usePrefs = create<{ guideColor: string }>(() => ({ guideColor: savedGuide() }))
+export const usePrefs = create<{ guideColor: string; theme: Theme }>(() => ({ guideColor: savedGuide(), theme: savedTheme() }))
+
+const systemDark = globalThis.matchMedia?.("(prefers-color-scheme: dark)")
+
+const showTheme = () => {
+
+  const { theme } = usePrefs.getState()
+
+  if (typeof document !== "undefined") document.documentElement.dataset.theme = theme === "dark" || (theme === "system" && systemDark?.matches) ? "dark" : "light"
+}
+
+showTheme()
+systemDark?.addEventListener("change", showTheme)
+
+export function setTheme(theme: Theme) {
+  globalThis.localStorage?.setItem(THEME_KEY, theme)
+  usePrefs.setState({ theme })
+  showTheme()
+}
 
 export function setGuideColor(id: string) {
   globalThis.localStorage?.setItem(GUIDE_KEY, id)

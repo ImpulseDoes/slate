@@ -91,7 +91,7 @@ export function beginClipDrag(e: React.PointerEvent, clip: Clip, mode: DragMode,
       current = group.map((c) => ({ ...toEdit(c), start: toFrame(c.start + shift, fps), trackId: c.id === clip.id ? trackId : c.trackId }))
     } else if (mode === "trim-l") {
       const shift = toFrame(Math.min(latestStart, Math.max(earliestStart, snap(clip.start + dt))), fps) - clip.start
-      current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.max(0, Math.round(c.offset + shift * speedOf(c))), duration: c.duration - shift }))
+      current = trimmed.map((c) => ({ ...toEdit(c), start: c.start + shift, offset: Math.round(c.offset + shift * speedOf(c)), duration: c.duration - shift }))
     } else {
       const change = toFrame(Math.min(latestEnd, Math.max(earliestEnd, snap(clipEnd(clip) + dt))), fps) - clipEnd(clip)
       current = trimmed.map((c) => ({ ...toEdit(c), duration: c.duration + change }))

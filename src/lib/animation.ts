@@ -1,4 +1,6 @@
 import type { AnimatedProp, Clip, ClipProps, Easing, Keyframe } from "../types"
+
+type ClipKeys = NonNullable<Clip["keys"]>
 import { clipEnd, sourceAt } from "./clips"
 import { ticks } from "./time"
 
@@ -27,10 +29,22 @@ export const withoutKey = (keys: Keyframe[], at: number, tolerance: number) => k
 export function withKey(keys: Keyframe[], at: number, value: number, tolerance: number) {
 
   const near = keyNear(keys, at, tolerance)
-  const key = { at: near?.at ?? at, value, ease: near?.ease ?? "smooth" as const }
+  // A new key keeps the curve of the stretch it lands in, so that stretch doesn't change shape.
+  const key = { at: near?.at ?? at, value, ease: near?.ease ?? keys.filter((k) => k.at < at).pop()?.ease ?? "smooth" as const }
 
   return [...withoutKey(keys, at, tolerance), key].sort((a, b) => a.at - b.at)
 }
+
+/** The key that starts the stretch `at` is in. The final key leads nowhere, so on or past it that's the one before. */
+export function leadingKey(keys: Keyframe[], at: number) {
+
+  const passed = keys.filter((k) => k.at <= at).length
+
+  return keys[Math.max(0, Math.min(passed - 1, keys.length - 2))]
+}
+
+export const shiftKeys = (keys: ClipKeys, by: number): ClipKeys =>
+  Object.fromEntries(Object.entries(keys).map(([prop, list]) => [prop, list?.map((k) => ({ ...k, at: k.at + by }))]))
 
 export function valueAt(keys: Keyframe[], at: number) {
 
@@ -100,7 +114,7 @@ export function typewriterSteps(clip: Clip): { clip: Clip; reveal: number }[] {
 
     steps.push({
       reveal: stop === end ? total : reveal,
-      clip: { ...clip, id: `${clip.id}~${reveal}`, start, duration: stop - start, enter: reveal === 1 ? clip.enter : undefined, exit: stop === end ? clip.exit : undefined },
+      clip: { ...clip, id: `${clip.id}~${reveal}`, start, offset: sourceAt(clip, start), duration: stop - start, enter: reveal === 1 ? clip.enter : undefined, exit: stop === end ? clip.exit : undefined },
     })
 
     if (stop === end) break

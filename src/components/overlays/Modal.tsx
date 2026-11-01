@@ -13,7 +13,7 @@ export function Modal({ title, labelId, onClose, footer, children, width = 400, 
   }, [onClose])
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div role="dialog" aria-modal aria-labelledby={labelId} className="rounded-2xl bg-surface shadow-float" style={{ width }}>
         <div className="px-5 pt-5 pb-4">
           <div className="flex items-start justify-between gap-3">

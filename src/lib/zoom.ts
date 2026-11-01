@@ -1,8 +1,8 @@
 import { useEditor } from "../store/editor"
 import type { Keyframe } from "../types"
-import { keyedPropsAt } from "./animation"
-import { clipEnd, sourceAt } from "./clips"
-import { ticks } from "./time"
+import { keyedPropsAt, leadingKey } from "./animation"
+import { clipEnd, sourceAt, speedOf } from "./clips"
+import { frameTicks, ticks } from "./time"
 
 export type ZoomKind = "in" | "out" | "punch"
 
@@ -19,15 +19,39 @@ export function addZoom(id: string, kind: ZoomKind) {
 
   if (!clip) return
 
+  const frame = frameTicks(state.settings.fps)
   const start = clip.start
-  const end = clipEnd(clip) - 1
+  // The last frame, not the last tick: the playhead can stop on it, so the key can be edited.
+  const end = Math.max(start, clipEnd(clip) - frame)
   const at = Math.min(end, Math.max(start, state.playhead))
-  const base = keyedPropsAt(clip, at).scale
+  const sizeAt = (time: number) => keyedPropsAt(clip, Math.min(end, time)).scale
   const key = (time: number, value: number): Keyframe => ({ at: sourceAt(clip, Math.min(end, time)), value, ease: "smooth" })
+
+  // Doing a zoom again replaces it from the same size, instead of zooming further each time.
+  const base = () => Math.min(sizeAt(start), sizeAt(end))
+
+  // A punch-in is a moment, so it goes in among the keys around it and hands back to their curve.
+  const punch = () => {
+
+    const size = sizeAt(at)
+    const hold = at + PUNCH_RAMP + PUNCH_HOLD
+    const back = hold + PUNCH_RAMP
+    const stops = [key(at, size), key(at + PUNCH_RAMP, size * PUNCH), key(hold, size * PUNCH), key(back, sizeAt(back))]
+    const placed = stops.filter((k, i) => !i || k.at !== stops[i - 1].at)
+    const around = clip.keys?.scale ?? []
+    const reach = (frame * speedOf(clip)) / 2
+    const last = placed[placed.length - 1]
+    const kept = around.filter((k) => k.at < placed[0].at - reach || k.at > last.at + reach)
+
+    if (around.length) last.ease = leadingKey(around, last.at).ease
+
+    return [...kept, ...placed].sort((a, b) => a.at - b.at)
+  }
+
   const keys = {
-    in: () => [key(start, base), key(end, base * DRIFT)],
-    out: () => [key(start, base * DRIFT), key(end, base)],
-    punch: () => [key(at, base), key(at + PUNCH_RAMP, base * PUNCH), key(at + PUNCH_RAMP + PUNCH_HOLD, base * PUNCH), key(at + PUNCH_RAMP * 2 + PUNCH_HOLD, base)],
+    in: () => [key(start, base()), key(end, base() * DRIFT)],
+    out: () => [key(start, base() * DRIFT), key(end, base())],
+    punch,
   }[kind]()
 
   state.transact((s) => ({ clips: s.clips.map((c) => (c.id === id ? { ...c, keys: { ...c.keys, scale: keys } } : c)) }))

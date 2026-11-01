@@ -2,6 +2,7 @@ import { memo } from "react"
 import { Link01Icon } from "@hugeicons/core-free-icons"
 import { speedOf } from "../../lib/clips"
 import { useT } from "../../lib/i18n"
+import { useEditor } from "../../store/editor"
 import type { Clip, MediaItem, Transition } from "../../types"
 import { CLIP_COLORS, Icon } from "../ui"
 import { Filmstrip } from "./Filmstrip"
@@ -35,6 +36,15 @@ export const ClipView = memo(function ClipView({ clip, media, ppt, height, selec
   const handles = !locked && width > 14
   const speed = speedOf(clip)
   const keyTimes = selected ? [...new Set(Object.values(clip.keys ?? {}).flatMap((list) => list?.map((k) => k.at) ?? []))] : []
+  const timeOfKey = (at: number) => clip.start + (at - clip.offset) / speed
+
+  const goToKey = (at: number) => {
+
+    const { setPlaying, setPlayhead } = useEditor.getState()
+
+    setPlaying(false)
+    setPlayhead(timeOfKey(at))
+  }
 
   return (
     <div
@@ -56,15 +66,17 @@ export const ClipView = memo(function ClipView({ clip, media, ppt, height, selec
       </div>
       {clip.enter && <Wedge transition={clip.enter} side="left" ppt={ppt} />}
       {clip.exit && <Wedge transition={clip.exit} side="right" ppt={ppt} />}
-      {keyTimes.map((at) => (
-        <div key={at} className="pointer-events-none absolute bottom-0.5 h-2 w-2 -translate-x-1/2 rotate-45 bg-primary ring-1 ring-white" style={{ left: ((at - clip.offset) / speed) * ppt }} />
-      ))}
       {handles && (
         <>
-          <div className="absolute inset-y-0 left-0 w-2 cursor-ew-resize group-hover:bg-black/15" onPointerDown={(e) => onDragStart(e, clip, "trim-l")} />
-          <div className="absolute inset-y-0 right-0 w-2 cursor-ew-resize group-hover:bg-black/15" onPointerDown={(e) => onDragStart(e, clip, "trim-r")} />
+          <div className="absolute inset-y-0 left-0 w-2 cursor-ew-resize group-hover:bg-fg/15" onPointerDown={(e) => onDragStart(e, clip, "trim-l")} />
+          <div className="absolute inset-y-0 right-0 w-2 cursor-ew-resize group-hover:bg-fg/15" onPointerDown={(e) => onDragStart(e, clip, "trim-r")} />
         </>
       )}
+      {keyTimes.map((at) => (
+        <button key={at} aria-label={t("keyframe.jump")} title={t("keyframe.jump")} onPointerDown={(e) => e.stopPropagation()} onClick={() => goToKey(at)} className="absolute bottom-0 flex h-3.5 w-3.5 -translate-x-1/2 items-center justify-center" style={{ left: (timeOfKey(at) - clip.start) * ppt }}>
+          <span className="h-2 w-2 rotate-45 bg-primary ring-1 ring-surface" />
+        </button>
+      ))}
     </div>
   )
 })

@@ -40,7 +40,7 @@ export function Transport() {
           </Button>
         </Tip>
         <Tip label={t(playing ? "viewer.pause" : "viewer.play")} kbd={t("key.space")}>
-          <button aria-label={t(playing ? "viewer.pause" : "viewer.play")} onClick={togglePlay} className="mx-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-fg text-white transition-colors hover:bg-[#3a3a3a]">
+          <button aria-label={t(playing ? "viewer.pause" : "viewer.play")} onClick={togglePlay} className="mx-1 inline-flex h-9 w-9 items-center justify-center rounded-full bg-fg text-surface transition-colors hover:bg-fg-hover">
             <Glyph icon={playing ? PauseIcon : PlayIcon} />
           </button>
         </Tip>

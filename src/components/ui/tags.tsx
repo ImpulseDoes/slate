@@ -39,7 +39,7 @@ export function StatusTag({ children, icon, tone = "muted" }: { children: ReactN
   const tones = {
     muted: "bg-raised text-label",
     error: "bg-danger-soft text-error",
-    progress: "bg-clip-text text-clip-text-strong",
+    progress: "bg-clip-title text-clip-title-strong",
   }
   return (
     <span className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 font-semibold uppercase text-caps ${tones[tone]}`}>

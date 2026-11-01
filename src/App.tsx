@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { OutputMeter } from "./components/audio/OutputMeter"
 import { ExportDialog } from "./components/dialogs/ExportDialog"
 import { LanguageDialog } from "./components/dialogs/LanguageDialog"
+import { ThemeDialog } from "./components/dialogs/ThemeDialog"
 import { MarkerDialog } from "./components/dialogs/MarkerDialog"
 import { ProjectSettingsDialog } from "./components/dialogs/ProjectSettingsDialog"
 import { RendersDialog } from "./components/dialogs/RendersDialog"
@@ -76,6 +77,7 @@ export default function App() {
       {dialog === "settings" && <ProjectSettingsDialog onClose={closeDialog} />}
       {dialog === "renders" && <RendersDialog onClose={closeDialog} />}
       {dialog === "language" && <LanguageDialog onClose={closeDialog} />}
+      {dialog === "theme" && <ThemeDialog onClose={closeDialog} />}
       {dialog === "marker" && <MarkerDialog onClose={closeDialog} />}
       {dialog === "silence" && <SilenceDialog onClose={closeDialog} />}
       {dialog === "autoCaptions" && <AutoCaptionsDialog onClose={closeDialog} />}

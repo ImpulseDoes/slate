@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { ANIMATED, keyedPropsAt, keyNear, withKey, withoutKey } from "../lib/animation"
+import { ANIMATED, keyedPropsAt, keyNear, leadingKey, shiftKeys, withKey, withoutKey } from "../lib/animation"
 import { clipEnd, clipTypeForMedia, closeSpans, DEFAULT_PROPS, linkedWith, lockedTrackIds, makeTrack, MAX_SPEED, MIN_SPEED, nextTrackName, overwriteRange, projectDuration, regrid, shiftAfter, sourceAt, sourceSpan, speedOf, trackKindFor } from "../lib/clips"
 import { t, translate, useLanguage } from "../lib/i18n"
 import { uid } from "../lib/platform"
@@ -320,7 +320,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     for (const e of edits) {
       const clip = clips.find((c) => c.id === e.id)
       if (!clip) continue
-      const next = { ...clip, trackId: e.trackId, start: toFrame(Math.max(0, e.start), fps), offset: Math.max(0, e.offset), duration: Math.max(frameTicks(fps), toFrame(e.duration, fps)) }
+      // A title or picture can grow left past its first moment. Its keys move over, to stay put on the timeline.
+      const past = Math.max(0, -e.offset)
+      const keys = past && clip.keys ? shiftKeys(clip.keys, past) : clip.keys
+      const next = { ...clip, keys, trackId: e.trackId, start: toFrame(Math.max(0, e.start), fps), offset: Math.max(0, e.offset), duration: Math.max(frameTicks(fps), toFrame(e.duration, fps)) }
       if (next.trackId !== clip.trackId || next.start !== clip.start || next.duration !== clip.duration) edited.push(next)
     }
     if (!edited.length) return
@@ -458,7 +461,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         track = makeTrack(uid(), "audio", nextTrackName(tracks, "audio"))
         tracks = [...tracks, track]
       }
-      detached.push({ ...c, id: uid(), trackId: track.id, type: "audio", props: { ...DEFAULT_PROPS, volume: c.props.volume }, audioDetached: false, linkId })
+      detached.push({ ...c, id: uid(), trackId: track.id, type: "audio", props: { ...DEFAULT_PROPS, volume: c.props.volume }, keys: c.keys?.volume && { volume: c.keys.volume }, audioDetached: false, linkId })
     }
     set({
       tracks,
@@ -616,13 +619,13 @@ export const useEditor = create<EditorState>((set, get) => ({
     const { clips, playhead } = get()
     const clip = clips.find((c) => c.id === id)
     if (!clip?.keys) return
-    const at = sourceAt(clip, playhead)
+    const at = sourceAt(clip, Math.min(clipEnd(clip) - 1, Math.max(clip.start, playhead)))
     const keys = Object.fromEntries(
       ANIMATED.flatMap((prop) => {
         const list = clip.keys?.[prop]
         if (!list?.length) return []
-        const last = list.filter((k) => k.at <= at).pop() ?? list[0]
-        return [[prop, list.map((k) => (k === last ? { ...k, ease } : k))]]
+        const leading = leadingKey(list, at)
+        return [[prop, list.map((k) => (k === leading ? { ...k, ease } : k))]]
       }),
     )
     get().checkpoint()

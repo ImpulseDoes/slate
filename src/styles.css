@@ -18,9 +18,12 @@
   --color-border: #e6e6e4;
   --color-border-strong: #d6d6d3;
   --color-tooltip: #2a2a2b;
+  --color-scrim: rgb(0 0 0 / 0.25);
+  --color-scrollbar-hover: #b9b9b6;
   --color-guide: #ff3d9a;
 
   --color-fg: #171717;
+  --color-fg-hover: #3a3a3a;
   --color-label: #565656;
   --color-muted: #737373;
   --color-link: #2a9be4;
@@ -37,8 +40,8 @@
   --color-clip-audio-strong: #23804a;
   /* Waveform bars ahead of the playhead: the strong green, faded. */
   --color-clip-audio-faded: rgb(35 128 74 / 0.42);
-  --color-clip-text: #ffe8cf;
-  --color-clip-text-strong: #bf6405;
+  --color-clip-title: #ffe8cf;
+  --color-clip-title-strong: #bf6405;
 
   --radius-xs: 4px;
   --radius-sm: 8px;
@@ -125,12 +128,55 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: #b9b9b6;
+    background-color: var(--color-scrollbar-hover);
   }
 
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #3b7bf6;
+  --color-primary-strong: #5b91f8;
+  --color-primary-highlight: rgb(59 123 246 / 0.2);
+  --color-primary-soft: #1e3157;
+  --color-on-primary-soft: #b4cdfd;
+
+  --color-app: #0f0f11;
+  --color-surface: #1a1b1e;
+  --color-raised: #27282c;
+  --color-raised-hover: #313237;
+  --color-viewer: #0b0c0e;
+  --color-border: #2c2d32;
+  --color-border-strong: #3c3d43;
+  --color-tooltip: #3a3b41;
+  --color-scrim: rgb(0 0 0 / 0.55);
+  --color-scrollbar-hover: #55565d;
+
+  --color-fg: #ededee;
+  --color-fg-hover: #ffffff;
+  --color-label: #b4b5b9;
+  --color-muted: #8d8e94;
+  --color-link: #5cb6f0;
+
+  --color-danger-soft: #41201f;
+
+  --color-clip-video: #22345f;
+  --color-clip-video-strong: #b9cefd;
+  --color-clip-image: #33295f;
+  --color-clip-image-strong: #d0c5ff;
+  --color-clip-audio: #173f2c;
+  --color-clip-audio-strong: #8fe0b0;
+  --color-clip-audio-faded: rgb(143 224 176 / 0.42);
+  --color-clip-title: #4a3216;
+  --color-clip-title-strong: #ffc98f;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
 }
 
 @utility tnum {

@@ -1,4 +1,4 @@
-import { CheckmarkCircle02Icon, Clock01Icon, Download04Icon, File01Icon, FilePlusIcon, FloppyDiskIcon, Folder01Icon, FolderOpenIcon, LanguageSquareIcon, LoaderPinwheelIcon, Mic01Icon, Redo02Icon, ScissorIcon, Settings02Icon, SmartPhone01Icon, SubtitleIcon, Undo02Icon, VolumeHighIcon, VolumeLowIcon } from "@hugeicons/core-free-icons"
+import { CheckmarkCircle02Icon, Clock01Icon, Download04Icon, File01Icon, FilePlusIcon, FloppyDiskIcon, Folder01Icon, FolderOpenIcon, LanguageSquareIcon, LoaderPinwheelIcon, Mic01Icon, Moon02Icon, Redo02Icon, ScissorIcon, Settings02Icon, SmartPhone01Icon, SubtitleIcon, Undo02Icon, VolumeHighIcon, VolumeLowIcon } from "@hugeicons/core-free-icons"
 import { toggleRecording } from "../../lib/audio/recorder"
 import { canUseSoundTools, duckSelected, normalizeSelected } from "../../lib/audio/tools"
 import { t, useT } from "../../lib/i18n"
@@ -25,6 +25,7 @@ function fileMenu(e: React.MouseEvent) {
     "divider",
     { label: t("file.projectSettings"), icon: Settings02Icon, onSelect: () => openDialog("settings") },
     { label: t("file.language"), icon: LanguageSquareIcon, onSelect: () => openDialog("language") },
+    { label: t("file.theme"), icon: Moon02Icon, onSelect: () => openDialog("theme") },
     { label: t("file.export"), icon: Download04Icon, kbd: `${MOD} E`, disabled: !hasClips, onSelect: () => openDialog("export") },
     ...(recent.length ? (["divider", ...recent] as MenuEntry[]) : []),
   ])

@@ -100,7 +100,7 @@ export function OutputMeter() {
               className="relative w-2.5 cursor-pointer overflow-visible before:absolute before:inset-x-0 before:-top-2 before:h-1 before:rounded-full before:bg-raised data-[clipped]:before:bg-error"
             >
               <Meter.Track className="absolute inset-0 overflow-hidden rounded-full bg-raised">
-                <Meter.Indicator className="absolute inset-0 origin-bottom bg-clip-audio-strong data-[warning]:bg-clip-text-strong data-[clipping]:bg-error" />
+                <Meter.Indicator className="absolute inset-0 origin-bottom bg-clip-audio-strong data-[warning]:bg-clip-title-strong data-[clipping]:bg-error" />
               </Meter.Track>
               <Meter.Peak className="absolute inset-x-0 h-0.5 translate-y-1/2 rounded-full bg-fg data-[clipping]:bg-error" />
             </Meter.Channel>
